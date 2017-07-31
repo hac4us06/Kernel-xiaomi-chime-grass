@@ -85,3 +85,6 @@ obj-y 	+= goodix/
 obj-y 	+= focaltech/
 obj-y   += cdfingerfp/
 obj-y                           += qrc/
+obj-$(CONFIG_KINECTICS_XR_NORDIC) += kxrctrl/
+
+obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
