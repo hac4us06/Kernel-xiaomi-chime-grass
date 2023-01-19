@@ -146,3 +146,13 @@ Android.bp
 
 # Tech package directories
 #techpack/
+
+# Build script & out
+build.sh
+out/
+
+# Compiler
+clang/
+gcc/
+gcc32/
+local.config
