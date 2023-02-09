@@ -39,7 +39,7 @@ KERNELSTR="$(./scripts/kernelversion)"
 CCSTR="$(./scripts/ccversion)"
 MY_PWD=$(pwd)
 TIME="$(date "+%m%d-%H%M%S")"
-KERNELZIP="$(echo "${KERNELSTR}" | sed s/^.*-//)@${TIME}.zip"
+KERNELZIP="$(echo ${KERNELSTR} | sed "s/$(echo "${KERNELSTR}" | sed 's/-/ /g' | awk '{print $1}')-//")@${TIME}.zip"
 COMMITMSG="$(git log --pretty=format:'"%h : %s"' -1)"
 BRANCH="$(git branch --show-current)"
 
