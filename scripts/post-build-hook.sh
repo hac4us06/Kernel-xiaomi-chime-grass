@@ -42,7 +42,11 @@ TIME="$(date "+%m%d-%H%M%S")"
 KERNELZIP="$(echo "${KERNELSTR}" | sed s/^.*-//)@${TIME}.zip"
 COMMITMSG="$(git log --pretty=format:'"%h : %s"' -1)"
 BRANCH="$(git branch --show-current)"
-cd ${srctree}/scripts/packaging/ || exit
+
+# Make the script fail if submodile is not there
+ls ${srctree}/scripts/packaging/* 2>&1 > /dev/null
+cd ${srctree}/scripts/packaging/
+
 bash pack.sh "${MY_PWD}/${OBJ}" "${KERNELZIP}"
 tg_sendText "<b>${KERNELSTR} Kernel Build</b>%0ABuild ended <code>Target: ${OBJ}</code>%0AFor device ${DEVICE}%0Abranch <code>${BRANCH}</code>%0AUnder commit <code>${COMMITMSG}</code>%0AUsing compiler: <code>${CCSTR}</code>%0AEnded on <code>$(date)</code>"
 tg_sendFile "${KERNELZIP}"
