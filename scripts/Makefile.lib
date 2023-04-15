@@ -175,7 +175,7 @@ cpp_flags      = -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(LINUXINCLUDE)     \
 
 ld_flags       = $(KBUILD_LDFLAGS) $(ldflags-y) $(LDFLAGS_$(@F))
 
-DTC_INCLUDE    := $(srctree)/scripts/dtc/include-prefixes
+DTC_INCLUDE    := $(srctree)/scripts/dtc/include-prefixes arch/arm64/boot/dts/vendor/qcom $(srctree)/arch/arm64/boot/dts/vendor/qcom/
 
 dtc_cpp_flags  = -Wp,-MD,$(depfile).pre.tmp -nostdinc                    \
 		 $(addprefix -I,$(DTC_INCLUDE))                          \
