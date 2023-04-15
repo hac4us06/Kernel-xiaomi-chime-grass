@@ -581,9 +581,6 @@ static u64 update_triggers(struct psi_group *group, u64 now)
 
 		/* Generate an event */
 		if (cmpxchg(&t->event, 0, 1) == 0) {
-			if (!strcmp(t->comm, ULMK_MAGIC))
-				mod_timer(&t->wdog_timer, jiffies +
-					  nsecs_to_jiffies(2 * t->win.size));
 			wake_up_interruptible(&t->event_wait);
 		}
 		t->last_event_time = now;
@@ -618,14 +615,10 @@ void psi_emergency_trigger(void)
 
 	now = sched_clock();
 	list_for_each_entry(t, &group->triggers, node) {
-		if (strcmp(t->comm, ULMK_MAGIC))
-			continue;
 		trace_psi_event(t->state, t->threshold);
 
 		/* Generate an event */
 		if (cmpxchg(&t->event, 0, 1) == 0) {
-			mod_timer(&t->wdog_timer, jiffies +
-					  nsecs_to_jiffies(2 * t->win.size));
 			wake_up_interruptible(&t->event_wait);
 		}
 		t->last_event_time = now;
@@ -655,9 +648,6 @@ bool psi_is_trigger_active(void)
 
 	now = sched_clock();
 	list_for_each_entry(t, &group->triggers, node) {
-		if (strcmp(t->comm, ULMK_MAGIC))
-			continue;
-
 		if (now <= t->last_event_time + t->win.size)
 			trigger_active = true;
 	}
@@ -1240,7 +1230,6 @@ void psi_trigger_destroy(struct psi_trigger *t)
 		}
 	}
 
-	del_timer_sync(&t->wdog_timer);
 	mutex_unlock(&group->trigger_lock);
 
 	/*
@@ -1285,8 +1274,6 @@ __poll_t psi_trigger_poll(void **trigger_ptr,
 
 	if (cmpxchg(&t->event, 1, 0) == 1) {
 		ret |= EPOLLPRI;
-		if (!strcmp(t->comm, ULMK_MAGIC))
-			ulmk_watchdog_pet(&t->wdog_timer);
 	}
 
 	return ret;
