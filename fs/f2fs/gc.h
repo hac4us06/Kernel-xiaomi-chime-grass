@@ -10,9 +10,10 @@
 						 * whether IO subsystem is idle
 						 * or not
 						 */
-#define DEF_GC_THREAD_URGENT_SLEEP_TIME	500	/* 500 ms */
+#define DEF_GC_THREAD_URGENT_SLEEP_TIME	50	/* 50 ms */
 #define DEF_GC_THREAD_MIN_SLEEP_TIME	30000	/* milliseconds */
 #define DEF_GC_THREAD_MAX_SLEEP_TIME	60000
+<<<<<<< HEAD
 #define DEF_GC_THREAD_NOGC_SLEEP_TIME	300000	/* wait 5 min */
 
 /* choose candidates from sections which has age of more than 7 days */
@@ -22,6 +23,9 @@
 #define DEF_GC_THREAD_AGE_WEIGHT		60	/* age weight */
 #define DEFAULT_ACCURACY_CLASS			10000	/* accuracy class */
 
+=======
+#define DEF_GC_THREAD_NOGC_SLEEP_TIME	1800000	/* wait 30 min */
+>>>>>>> wip
 #define LIMIT_INVALID_BLOCK	40 /* percentage over total user space */
 #define LIMIT_FREE_BLOCK	40 /* percentage over invalid + free space */
 

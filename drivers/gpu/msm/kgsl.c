@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2008-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <uapi/linux/sched/types.h>
@@ -5192,6 +5193,7 @@ static void _unregister_device(struct kgsl_device *device)
 static int _register_device(struct kgsl_device *device)
 {
 	static u64 dma_mask = DMA_BIT_MASK(64);
+	static struct device_dma_parameters dma_parms;
 	int minor, ret;
 	dev_t dev;
 
@@ -5228,6 +5230,10 @@ static int _register_device(struct kgsl_device *device)
 	}
 
 	device->dev->dma_mask = &dma_mask;
+	device->dev->dma_parms = &dma_parms;
+
+	dma_set_max_seg_size(device->dev, DMA_BIT_MASK(32));
+
 	arch_setup_dma_ops(device->dev, 0, 0, NULL, false);
 
 	dev_set_drvdata(&device->pdev->dev, device);
@@ -5476,7 +5482,11 @@ static void kgsl_core_exit(void)
 static int __init kgsl_core_init(void)
 {
 	int result = 0;
+<<<<<<< HEAD
 	struct sched_param param = { .sched_priority = 16 };
+=======
+	struct sched_param param = { .sched_priority = 0 };
+>>>>>>> wip
 
 	/* alloc major and minor device numbers */
 	result = alloc_chrdev_region(&kgsl_driver.major, 0,
@@ -5539,7 +5549,7 @@ static int __init kgsl_core_init(void)
 	INIT_LIST_HEAD(&kgsl_driver.pagetable_list);
 
 	kgsl_driver.workqueue = alloc_workqueue("kgsl-workqueue",
-		WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS, 0);
+		WQ_HIGHPRI | WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS, 0);
 
 	kgsl_driver.mem_workqueue = alloc_workqueue("kgsl-mementry",
 		WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
@@ -5556,7 +5566,7 @@ static int __init kgsl_core_init(void)
 		goto err;
 	}
 
-	sched_setscheduler(kgsl_driver.worker_thread, SCHED_FIFO, &param);
+	sched_setscheduler(kgsl_driver.worker_thread, SCHED_RR, &param);
 
 	kgsl_events_init();
 

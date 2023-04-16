@@ -26,7 +26,11 @@ ifeq ($(ld-name),bfd)
 LDFLAGS_vmlinux		+= -shared
 endif
 ifeq ($(ld-name),lld)
+<<<<<<< HEAD
 LDFLAGS_vmlinux		+= -pie -z norelro
+=======
+LDFLAGS_vmlinux		+= -pie
+>>>>>>> wip
 endif
 endif
 
@@ -72,6 +76,11 @@ KBUILD_AFLAGS	+= $(call cc-option,-mabi=lp64)
 
 ifeq ($(CONFIG_SHADOW_CALL_STACK), y)
 KBUILD_CFLAGS	+= -ffixed-x18
+ifeq ($(cc-name),clang)
+KBUILD_CFLAGS	+= -DCONFIG_ARCH_SUPPORTS_INT128
+else
+KBUILD_CFLAGS	+= $(call cc-ifversion, -ge, 0500, -DCONFIG_ARCH_SUPPORTS_INT128)
+endif
 endif
 
 ifeq ($(CONFIG_CPU_BIG_ENDIAN), y)
@@ -206,6 +215,7 @@ endif
 PHONY += vdso_install
 vdso_install:
 	$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso $@
+	$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso32 $@
 
 # We use MRPROPER_FILES and CLEAN_FILES now
 archclean:

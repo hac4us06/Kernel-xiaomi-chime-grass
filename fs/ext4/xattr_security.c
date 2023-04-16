@@ -14,8 +14,13 @@
 
 static int
 ext4_xattr_security_get(const struct xattr_handler *handler,
+<<<<<<< HEAD
 			struct dentry *dentry, struct inode *inode,
 			const char *name, void *buffer, size_t size)
+=======
+			struct dentry *unused, struct inode *inode,
+			const char *name, void *buffer, size_t size, int flags)
+>>>>>>> wip
 {
 
 	if (strcmp(name, "sehash") == 0 && test_opt(dentry->d_sb, NO_SEHASH_XATTR))

@@ -59,10 +59,17 @@ static void yaml_propval_int(yaml_emitter_t *emitter, struct marker *markers, ch
 			sprintf(buf, "0x%"PRIx8, *(uint8_t*)(data + off));
 			break;
 		case 2:
+<<<<<<< HEAD
 			sprintf(buf, "0x%"PRIx16, fdt16_to_cpu(*(fdt16_t*)(data + off)));
 			break;
 		case 4:
 			sprintf(buf, "0x%"PRIx32, fdt32_to_cpu(*(fdt32_t*)(data + off)));
+=======
+			sprintf(buf, "0x%"PRIx16, dtb_ld16(data + off));
+			break;
+		case 4:
+			sprintf(buf, "0x%"PRIx32, dtb_ld32(data + off));
+>>>>>>> wip
 			m = markers;
 			is_phandle = false;
 			for_each_marker_of_type(m, REF_PHANDLE) {
@@ -73,7 +80,11 @@ static void yaml_propval_int(yaml_emitter_t *emitter, struct marker *markers, ch
 			}
 			break;
 		case 8:
+<<<<<<< HEAD
 			sprintf(buf, "0x%"PRIx64, fdt64_to_cpu(*(fdt64_t*)(data + off)));
+=======
+			sprintf(buf, "0x%"PRIx64, dtb_ld64(data + off));
+>>>>>>> wip
 			break;
 		}
 
@@ -138,6 +149,30 @@ static void yaml_propval(yaml_emitter_t *emitter, struct property *prop)
 		(yaml_char_t *)YAML_SEQ_TAG, 1, YAML_FLOW_SEQUENCE_STYLE);
 	yaml_emitter_emit_or_die(emitter, &event);
 
+<<<<<<< HEAD
+=======
+	/* Ensure we have a type marker before any phandle */
+	for_each_marker(m) {
+		int last_offset = 0;
+		struct marker *type_m;
+
+		if (m->type >= TYPE_UINT8)
+			last_offset = m->offset;
+
+		if (!(m->next && m->next->type == REF_PHANDLE &&
+		      last_offset < m->next->offset))
+			continue;
+
+		type_m = xmalloc(sizeof(*type_m));
+		type_m->offset = m->next->offset;
+		type_m->type = TYPE_UINT32;
+		type_m->ref = NULL;
+		type_m->next = m->next;
+		m->next = type_m;
+	}
+
+	m = prop->val.markers;
+>>>>>>> wip
 	for_each_marker(m) {
 		int chunk_len;
 		char *data = &prop->val.val[m->offset];

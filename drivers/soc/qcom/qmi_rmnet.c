@@ -1168,6 +1168,7 @@ static void qmi_rmnet_check_stats(struct work_struct *work)
 	if (unlikely(!qmi))
 		return;
 
+<<<<<<< HEAD
 	rmnet_get_packets(real_work->port, &rx, &tx);
 	rxd = rx - real_work->old_rx_pkts;
 	txd = tx - real_work->old_tx_pkts;
@@ -1177,6 +1178,8 @@ static void qmi_rmnet_check_stats(struct work_struct *work)
 	dl_msg_active = qmi->dl_msg_active;
 	qmi->dl_msg_active = false;
 
+=======
+>>>>>>> wip
 	if (qmi->ps_enabled) {
 
 		/* Ready to accept grant */
@@ -1196,6 +1199,15 @@ static void qmi_rmnet_check_stats(struct work_struct *work)
 
 		goto end;
 	}
+
+	rmnet_get_packets(real_work->port, &rx, &tx);
+	rxd = rx - real_work->old_rx_pkts;
+	txd = tx - real_work->old_tx_pkts;
+	real_work->old_rx_pkts = rx;
+	real_work->old_tx_pkts = tx;
+
+	dl_msg_active = qmi->dl_msg_active;
+	qmi->dl_msg_active = false;
 
 	if (!rxd && !txd) {
 		/* If no DL msg received and there is a flow disabled,
@@ -1227,6 +1239,80 @@ static void qmi_rmnet_check_stats(struct work_struct *work)
 	}
 end:
 	rcu_read_lock();
+<<<<<<< HEAD
+=======
+	if (!rmnet_work_quit)
+		queue_delayed_work(rmnet_ps_wq, &real_work->work, PS_INTERVAL);
+	rcu_read_unlock();
+}
+
+static void qmi_rmnet_check_stats_2(struct work_struct *work)
+{
+	struct rmnet_powersave_work *real_work;
+	struct qmi_info *qmi;
+	u64 rxd, txd;
+	u64 rx, tx;
+	u8 num_bearers;
+
+	real_work = container_of(to_delayed_work(work),
+				 struct rmnet_powersave_work, work);
+
+	if (unlikely(!real_work->port))
+		return;
+
+	qmi = (struct qmi_info *)rmnet_get_qmi_pt(real_work->port);
+	if (unlikely(!qmi))
+		return;
+
+	if (qmi->ps_enabled) {
+
+		/* Ready to accept grant */
+		qmi->ps_ignore_grant = false;
+
+		/* Out of powersave */
+		if (dfc_qmap_set_powersave(0, 0, NULL))
+			goto end;
+
+		qmi->ps_enabled = false;
+
+		if (rmnet_get_powersave_notif(real_work->port))
+			qmi_rmnet_ps_off_notify(real_work->port);
+
+		goto end;
+	}
+
+	rmnet_get_packets(real_work->port, &rx, &tx);
+	rxd = rx - real_work->old_rx_pkts;
+	txd = tx - real_work->old_tx_pkts;
+	real_work->old_rx_pkts = rx;
+	real_work->old_tx_pkts = tx;
+
+	if (!rxd && !txd) {
+		qmi->ps_ignore_grant = true;
+		qmi->ps_enabled = true;
+		clear_bit(PS_WORK_ACTIVE_BIT, &qmi->ps_work_active);
+
+		/* Let other CPU's see this update so that packets are
+		 * dropped, instead of further processing packets
+		 */
+		smp_mb();
+
+		num_bearers = sizeof(ps_bearer_id);
+		memset(ps_bearer_id, 0, sizeof(ps_bearer_id));
+		rmnet_prepare_ps_bearers(real_work->port, &num_bearers,
+					 ps_bearer_id);
+
+		/* Enter powersave */
+		dfc_qmap_set_powersave(1, num_bearers, ps_bearer_id);
+
+		if (rmnet_get_powersave_notif(real_work->port))
+			qmi_rmnet_ps_on_notify(real_work->port);
+
+		return;
+	}
+end:
+	rcu_read_lock();
+>>>>>>> wip
 	if (!rmnet_work_quit)
 		queue_delayed_work(rmnet_ps_wq, &real_work->work,
 				   PS_INTERVAL_JF);

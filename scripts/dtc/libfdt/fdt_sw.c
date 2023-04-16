@@ -12,10 +12,20 @@
 
 static int fdt_sw_probe_(void *fdt)
 {
+<<<<<<< HEAD
 	if (fdt_magic(fdt) == FDT_MAGIC)
 		return -FDT_ERR_BADSTATE;
 	else if (fdt_magic(fdt) != FDT_SW_MAGIC)
 		return -FDT_ERR_BADMAGIC;
+=======
+	if (!can_assume(VALID_INPUT)) {
+		if (fdt_magic(fdt) == FDT_MAGIC)
+			return -FDT_ERR_BADSTATE;
+		else if (fdt_magic(fdt) != FDT_SW_MAGIC)
+			return -FDT_ERR_BADMAGIC;
+	}
+
+>>>>>>> wip
 	return 0;
 }
 
@@ -29,7 +39,11 @@ static int fdt_sw_probe_(void *fdt)
 /* 'memrsv' state:	Initial state after fdt_create()
  *
  * Allowed functions:
+<<<<<<< HEAD
  *	fdt_add_reservmap_entry()
+=======
+ *	fdt_add_reservemap_entry()
+>>>>>>> wip
  *	fdt_finish_reservemap()		[moves to 'struct' state]
  */
 static int fdt_sw_probe_memrsv_(void *fdt)
@@ -38,7 +52,11 @@ static int fdt_sw_probe_memrsv_(void *fdt)
 	if (err)
 		return err;
 
+<<<<<<< HEAD
 	if (fdt_off_dt_strings(fdt) != 0)
+=======
+	if (!can_assume(VALID_INPUT) && fdt_off_dt_strings(fdt) != 0)
+>>>>>>> wip
 		return -FDT_ERR_BADSTATE;
 	return 0;
 }
@@ -64,7 +82,12 @@ static int fdt_sw_probe_struct_(void *fdt)
 	if (err)
 		return err;
 
+<<<<<<< HEAD
 	if (fdt_off_dt_strings(fdt) != fdt_totalsize(fdt))
+=======
+	if (!can_assume(VALID_INPUT) &&
+	    fdt_off_dt_strings(fdt) != fdt_totalsize(fdt))
+>>>>>>> wip
 		return -FDT_ERR_BADSTATE;
 	return 0;
 }
@@ -151,7 +174,12 @@ int fdt_resize(void *fdt, void *buf, int bufsize)
 	headsize = fdt_off_dt_struct(fdt) + fdt_size_dt_struct(fdt);
 	tailsize = fdt_size_dt_strings(fdt);
 
+<<<<<<< HEAD
 	if ((headsize + tailsize) > fdt_totalsize(fdt))
+=======
+	if (!can_assume(VALID_DTB) &&
+	    headsize + tailsize > fdt_totalsize(fdt))
+>>>>>>> wip
 		return -FDT_ERR_INTERNAL;
 
 	if ((headsize + tailsize) > bufsize)

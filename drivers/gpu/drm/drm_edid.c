@@ -3101,35 +3101,8 @@ static u8 drm_match_cea_mode_clock_tolerance(const struct drm_display_mode *to_m
  * Return: The CEA Video ID (VIC) of the mode or 0 if it isn't a CEA-861
  * mode.
  */
-u8 drm_match_cea_mode(const struct drm_display_mode *to_match)
+inline u8 drm_match_cea_mode(const struct drm_display_mode *to_match)
 {
-	unsigned int match_flags = DRM_MODE_MATCH_TIMINGS | DRM_MODE_MATCH_FLAGS;
-	u8 vic;
-
-	if (!to_match->clock)
-		return 0;
-
-	if (to_match->picture_aspect_ratio)
-		match_flags |= DRM_MODE_MATCH_ASPECT_RATIO;
-
-	for (vic = 1; vic < ARRAY_SIZE(edid_cea_modes); vic++) {
-		struct drm_display_mode cea_mode = edid_cea_modes[vic];
-		unsigned int clock1, clock2;
-
-		/* Check both 60Hz and 59.94Hz */
-		clock1 = cea_mode.clock;
-		clock2 = cea_mode_alternate_clock(&cea_mode);
-
-		if (KHZ2PICOS(to_match->clock) != KHZ2PICOS(clock1) &&
-		    KHZ2PICOS(to_match->clock) != KHZ2PICOS(clock2))
-			continue;
-
-		do {
-			if (drm_mode_match(to_match, &cea_mode, match_flags))
-				return vic;
-		} while (cea_mode_alternate_timings(vic, &cea_mode));
-	}
-
 	return 0;
 }
 EXPORT_SYMBOL(drm_match_cea_mode);
@@ -4634,7 +4607,8 @@ bool drm_detect_monitor_audio(struct edid *edid)
 	if (!edid_ext)
 		goto end;
 
-	has_audio = ((edid_ext[3] & EDID_BASIC_AUDIO) != 0);
+	has_audio = (edid_ext[0] == CEA_EXT &&
+		    (edid_ext[3] & EDID_BASIC_AUDIO) != 0);
 
 	if (has_audio) {
 		DRM_DEBUG_KMS("Monitor has basic audio support\n");
@@ -4756,16 +4730,8 @@ static void drm_parse_hdmi_deep_color_info(struct drm_connector *connector,
 		  connector->name, dc_bpc);
 	info->bpc = dc_bpc;
 
-	/*
-	 * Deep color support mandates RGB444 support for all video
-	 * modes and forbids YCRCB422 support for all video modes per
-	 * HDMI 1.3 spec.
-	 */
-	info->color_formats = DRM_COLOR_FORMAT_RGB444;
-
 	/* YCRCB444 is optional according to spec. */
 	if (hdmi[6] & DRM_EDID_HDMI_DC_Y444) {
-		info->color_formats |= DRM_COLOR_FORMAT_YCRCB444;
 		DRM_DEBUG("%s: HDMI sink does YCRCB444 in deep color.\n",
 			  connector->name);
 	}
@@ -4910,6 +4876,7 @@ u32 drm_add_display_info(struct drm_connector *connector, const struct edid *edi
 	if (!(edid->input & DRM_EDID_INPUT_DIGITAL))
 		return quirks;
 
+	info->color_formats |= DRM_COLOR_FORMAT_RGB444;
 	drm_parse_cea_ext(connector, edid);
 
 	/*
@@ -4963,7 +4930,6 @@ u32 drm_add_display_info(struct drm_connector *connector, const struct edid *edi
 	DRM_DEBUG("%s: Assigning EDID-1.4 digital sink color depth as %d bpc.\n",
 			  connector->name, info->bpc);
 
-	info->color_formats |= DRM_COLOR_FORMAT_RGB444;
 	if (edid->features & DRM_EDID_FEATURE_RGB_YCRCB444)
 		info->color_formats |= DRM_COLOR_FORMAT_YCRCB444;
 	if (edid->features & DRM_EDID_FEATURE_RGB_YCRCB422)

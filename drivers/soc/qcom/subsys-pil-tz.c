@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <linux/kernel.h>
@@ -727,8 +728,7 @@ static int pil_init_image_trusted(struct pil_desc *pil,
 		return -ENOMEM;
 	}
 
-	memcpy(mdata_buf, metadata, size);
-
+memcpy_toio((void __iomem *)mdata_buf, metadata, size);
 	desc.args[0] = d->pas_id;
 	desc.args[1] = mdata_phys;
 	desc.arginfo = SCM_ARGS(2, SCM_VAL, SCM_RW);

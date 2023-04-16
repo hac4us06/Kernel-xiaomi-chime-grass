@@ -43,6 +43,7 @@
 #include <linux/interrupt.h>
 #include <linux/init.h>
 #include <linux/blkdev.h>
+#include <linux/blk-pm.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
@@ -215,6 +216,8 @@ static unsigned int sr_get_events(struct scsi_device *sdev)
 	if (med->media_event_code == 1)
 		return DISK_EVENT_EJECT_REQUEST;
 	else if (med->media_event_code == 2)
+		return DISK_EVENT_MEDIA_CHANGE;
+	else if (med->media_event_code == 3)
 		return DISK_EVENT_MEDIA_CHANGE;
 	return 0;
 }
@@ -883,7 +886,7 @@ static void get_capabilities(struct scsi_cd *cd)
 
 
 	/* allocate transfer buffer */
-	buffer = kmalloc(512, GFP_KERNEL | GFP_DMA);
+	buffer = kmalloc(512, GFP_KERNEL);
 	if (!buffer) {
 		sr_printk(KERN_ERR, cd, "out of memory.\n");
 		return;

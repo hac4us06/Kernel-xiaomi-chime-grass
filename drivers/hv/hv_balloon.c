@@ -1092,6 +1092,7 @@ static void process_info(struct hv_dynmem_device *dm, struct dm_info_msg *msg)
 static unsigned long compute_balloon_floor(void)
 {
 	unsigned long min_pages;
+	unsigned long nr_pages = totalram_pages();
 #define MB2PAGES(mb) ((mb) << (20 - PAGE_SHIFT))
 	/* Simple continuous piecewiese linear function:
 	 *  max MiB -> min MiB  gradient
@@ -1104,16 +1105,16 @@ static unsigned long compute_balloon_floor(void)
 	 *    8192       744    (1/16)
 	 *   32768      1512	(1/32)
 	 */
-	if (totalram_pages < MB2PAGES(128))
-		min_pages = MB2PAGES(8) + (totalram_pages >> 1);
-	else if (totalram_pages < MB2PAGES(512))
-		min_pages = MB2PAGES(40) + (totalram_pages >> 2);
-	else if (totalram_pages < MB2PAGES(2048))
-		min_pages = MB2PAGES(104) + (totalram_pages >> 3);
-	else if (totalram_pages < MB2PAGES(8192))
-		min_pages = MB2PAGES(232) + (totalram_pages >> 4);
+	if (nr_pages < MB2PAGES(128))
+		min_pages = MB2PAGES(8) + (nr_pages >> 1);
+	else if (nr_pages < MB2PAGES(512))
+		min_pages = MB2PAGES(40) + (nr_pages >> 2);
+	else if (nr_pages < MB2PAGES(2048))
+		min_pages = MB2PAGES(104) + (nr_pages >> 3);
+	else if (nr_pages < MB2PAGES(8192))
+		min_pages = MB2PAGES(232) + (nr_pages >> 4);
 	else
-		min_pages = MB2PAGES(488) + (totalram_pages >> 5);
+		min_pages = MB2PAGES(488) + (nr_pages >> 5);
 #undef MB2PAGES
 	return min_pages;
 }
@@ -1275,7 +1276,7 @@ static void balloon_up(struct work_struct *dummy)
 
 	/* Refuse to balloon below the floor. */
 	if (avail_pages < num_pages || avail_pages - num_pages < floor) {
-		pr_warn("Balloon request will be partially fulfilled. %s\n",
+		pr_info("Balloon request will be partially fulfilled. %s\n",
 			avail_pages < num_pages ? "Not enough memory." :
 			"Balloon floor reached.");
 
@@ -1548,7 +1549,7 @@ static void balloon_onchannelcallback(void *context)
 			break;
 
 		default:
-			pr_warn("Unhandled message: type: %d\n", dm_hdr->type);
+			pr_warn_ratelimited("Unhandled message: type: %d\n", dm_hdr->type);
 
 		}
 	}

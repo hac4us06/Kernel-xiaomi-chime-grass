@@ -227,8 +227,11 @@ source "drivers/slimbus/Kconfig"
 
 source "drivers/esoc/Kconfig"
 
+<<<<<<< HEAD
 source "drivers/lastkmsg/Kconfig"
 
+=======
+>>>>>>> wip
 source "drivers/switch/Kconfig"
 
 source "drivers/sensors/Kconfig"

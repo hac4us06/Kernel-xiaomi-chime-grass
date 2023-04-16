@@ -2,7 +2,9 @@
 /*
  * Copyright (c) 2002,2007-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (C) 2020 XiaoMi, Inc.
  */
+
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/of.h>
@@ -34,7 +36,7 @@ static unsigned int counter_delta(struct kgsl_device *device,
 
 static struct devfreq_msm_adreno_tz_data adreno_tz_data = {
 	.bus = {
-		.max = 350,
+		.max = 1200,
 		.floating = true,
 	},
 	.device_id = KGSL_DEVICE_3D0,
@@ -1121,7 +1123,11 @@ static int adreno_of_get_power(struct adreno_device *adreno_dev,
 		device->pwrctrl.pm_qos_wakeup_latency = 101;
 
 	if (of_property_read_u32(node, "qcom,idle-timeout", &timeout))
+<<<<<<< HEAD
 		timeout = 58;
+=======
+		timeout = 64;
+>>>>>>> wip
 
 	device->pwrctrl.interval_timeout = msecs_to_jiffies(timeout);
 

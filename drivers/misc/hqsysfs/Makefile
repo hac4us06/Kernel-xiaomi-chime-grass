@@ -10,6 +10,16 @@
 # GNU General Public License for more details.
 #
 
+<<<<<<< HEAD
 obj-y := hqsysfs.o
 obj-y += hqsys_misc.o
 obj-y += hqsys_pcba.o
+=======
+# obj-$(CONFIG_HQ_SYSFS_SUPPORT) := hqsysfs.o
+obj-y := hqsysfs.o
+obj-y += hqsys_misc.o
+obj-y += hqsys_pcba.o
+#obj-y += hqsys_emmc_info.o
+#obj-y += hqsys_cam_info.o
+
+>>>>>>> wip

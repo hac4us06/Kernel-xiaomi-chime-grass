@@ -340,7 +340,9 @@ int ovl_xattr_set(struct dentry *dentry, struct inode *inode, const char *name,
 		goto out;
 
 	if (!value && !upperdentry) {
+		old_cred = ovl_override_creds(dentry->d_sb);
 		err = vfs_getxattr(realdentry, name, NULL, 0);
+		revert_creds(old_cred);
 		if (err < 0)
 			goto out_drop_write;
 	}
@@ -381,7 +383,7 @@ int __ovl_xattr_get(struct dentry *dentry, struct inode *inode,
 
 	old_cred = ovl_override_creds(dentry->d_sb);
 	res = __vfs_getxattr(realdentry, d_inode(realdentry), name, value,
-			     size);
+			     size, XATTR_NOSECURITY);
 	ovl_revert_creds(old_cred);
 	return res;
 }

@@ -2948,13 +2948,21 @@ write:
 		 * the below discard race condition.
 		 */
 		if (IS_NOQUOTA(inode))
+<<<<<<< HEAD
 			f2fs_down_read(&sbi->node_write);
+=======
+			down_read(&sbi->node_write);
+>>>>>>> wip
 
 		fio.need_lock = LOCK_DONE;
 		err = f2fs_do_write_data_page(&fio);
 
 		if (IS_NOQUOTA(inode))
+<<<<<<< HEAD
 			f2fs_up_read(&sbi->node_write);
+=======
+			up_read(&sbi->node_write);
+>>>>>>> wip
 
 		goto done;
 	}
@@ -3250,8 +3258,17 @@ result:
 				} else if (ret == -EAGAIN) {
 					ret = 0;
 					if (wbc->sync_mode == WB_SYNC_ALL) {
+<<<<<<< HEAD
 						f2fs_io_schedule_timeout(
 							DEFAULT_IO_TIMEOUT);
+=======
+						cond_resched();
+#if (CONFIG_HZ > 100)
+						congestion_wait(BLK_RW_ASYNC, 2);
+#else
+						congestion_wait(BLK_RW_ASYNC, 1);
+#endif
+>>>>>>> wip
 						goto retry_write;
 					}
 					goto next;

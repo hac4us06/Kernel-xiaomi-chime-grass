@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <linux/device.h>
@@ -35,14 +36,7 @@
 		__func__, ##__VA_ARGS__)	\
 
 #define smblib_dbg(chg, reason, fmt, ...)			\
-	do {							\
-		if (*chg->debug_mask & (reason))		\
-			pr_info("%s: %s: " fmt, chg->name,	\
-				__func__, ##__VA_ARGS__);	\
-		else						\
-			pr_debug("%s: %s: " fmt, chg->name,	\
-				__func__, ##__VA_ARGS__);	\
-	} while (0)
+	do { } while (0)
 
 #define typec_rp_med_high(chg, typec_mode)			\
 	((typec_mode == POWER_SUPPLY_TYPEC_SOURCE_MEDIUM	\

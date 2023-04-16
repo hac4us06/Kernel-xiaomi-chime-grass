@@ -70,7 +70,11 @@ static FORCE_INLINE int LZ4_decompress_generic(
 	 endCondition_directive endOnInput,
 	 /* full, partial */
 	 earlyEnd_directive partialDecoding,
+<<<<<<< HEAD
 	 /* noDict, withPrefix64k, usingExtDict */
+=======
+	 /* noDict, withPrefix64k */
+>>>>>>> wip
 	 dict_directive dict,
 	 /* always <= dst, == dst when no prefix */
 	 const BYTE * const lowPrefix,
@@ -87,7 +91,10 @@ static FORCE_INLINE int LZ4_decompress_generic(
 	BYTE * const oend = op + outputSize;
 	BYTE *cpy;
 
+<<<<<<< HEAD
 	const BYTE * const dictEnd = (const BYTE *)dictStart + dictSize;
+=======
+>>>>>>> wip
 	static const unsigned int inc32table[8] = {0, 1, 2, 1, 0, 4, 4, 4};
 	static const int dec64table[8] = {0, 0, 0, -1, -4, 1, 2, 3};
 
@@ -150,7 +157,11 @@ static FORCE_INLINE int LZ4_decompress_generic(
 		   && likely((endOnInput ? ip < shortiend : 1) &
 			     (op <= shortoend))) {
 			/* Copy the literals */
+<<<<<<< HEAD
 			LZ4_memcpy(op, ip, endOnInput ? 16 : 8);
+=======
+			memcpy(op, ip, endOnInput ? 16 : 8);
+>>>>>>> wip
 			op += length; ip += length;
 
 			/*
@@ -169,9 +180,15 @@ static FORCE_INLINE int LZ4_decompress_generic(
 			    (offset >= 8) &&
 			    (dict == withPrefix64k || match >= lowPrefix)) {
 				/* Copy the match. */
+<<<<<<< HEAD
 				LZ4_memcpy(op + 0, match + 0, 8);
 				LZ4_memcpy(op + 8, match + 8, 8);
 				LZ4_memcpy(op + 16, match + 16, 2);
+=======
+				memcpy(op + 0, match + 0, 8);
+				memcpy(op + 8, match + 8, 8);
+				memcpy(op + 16, match + 16, 2);
+>>>>>>> wip
 				op += length + MINMATCH;
 				/* Both stages worked, load the next token. */
 				continue;
@@ -322,6 +339,7 @@ _copy_match:
 
 		length += MINMATCH;
 
+<<<<<<< HEAD
 		/* match starting within external dictionary */
 		if ((dict == usingExtDict) && (match < lowPrefix)) {
 			if (unlikely(op + length > oend - LASTLITERALS)) {
@@ -364,6 +382,8 @@ _copy_match:
 			continue;
 		}
 
+=======
+>>>>>>> wip
 		/* copy match within block */
 		cpy = op + length;
 
@@ -383,7 +403,11 @@ _copy_match:
 				while (op < copyEnd)
 					*op++ = *match++;
 			} else {
+<<<<<<< HEAD
 				LZ4_memcpy(op, match, mlen);
+=======
+				memcpy(op, match, mlen);
+>>>>>>> wip
 			}
 			op = copyEnd;
 			if (op == oend)
@@ -397,7 +421,11 @@ _copy_match:
 			op[2] = match[2];
 			op[3] = match[3];
 			match += inc32table[offset];
+<<<<<<< HEAD
 			LZ4_memcpy(op + 4, match, 4);
+=======
+			memcpy(op + 4, match, 4);
+>>>>>>> wip
 			match -= dec64table[offset];
 		} else {
 			LZ4_copy8(op, match);
@@ -453,6 +481,7 @@ int LZ4_decompress_safe(const char *source, char *dest,
 				      compressedSize, maxDecompressedSize,
 				      endOnInputSize, decode_full_block,
 				      noDict, (BYTE *)dest, NULL, 0);
+<<<<<<< HEAD
 }
 
 int LZ4_decompress_safe_partial(const char *src, char *dst,
@@ -462,6 +491,8 @@ int LZ4_decompress_safe_partial(const char *src, char *dst,
 	return LZ4_decompress_generic(src, dst, compressedSize, dstCapacity,
 				      endOnInputSize, partial_decode,
 				      noDict, (BYTE *)dst, NULL, 0);
+=======
+>>>>>>> wip
 }
 
 int LZ4_decompress_fast(const char *source, char *dest, int originalSize)
@@ -470,6 +501,7 @@ int LZ4_decompress_fast(const char *source, char *dest, int originalSize)
 				      endOnOutputSize, decode_full_block,
 				      withPrefix64k,
 				      (BYTE *)dest - 64 * KB, NULL, 0);
+<<<<<<< HEAD
 }
 
 /* ===== Instantiate a few more decoding cases, used more than once. ===== */
@@ -692,18 +724,11 @@ int LZ4_decompress_fast_usingDict(const char *source, char *dest,
 
 	return LZ4_decompress_fast_extDict(source, dest, originalSize,
 		dictStart, dictSize);
+=======
+>>>>>>> wip
 }
 
 #ifndef STATIC
-EXPORT_SYMBOL(LZ4_decompress_safe);
-EXPORT_SYMBOL(LZ4_decompress_safe_partial);
-EXPORT_SYMBOL(LZ4_decompress_fast);
-EXPORT_SYMBOL(LZ4_setStreamDecode);
-EXPORT_SYMBOL(LZ4_decompress_safe_continue);
-EXPORT_SYMBOL(LZ4_decompress_fast_continue);
-EXPORT_SYMBOL(LZ4_decompress_safe_usingDict);
-EXPORT_SYMBOL(LZ4_decompress_fast_usingDict);
-
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("LZ4 decompressor");
 #endif

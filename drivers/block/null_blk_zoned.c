@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/vmalloc.h>
+#include <linux/sizes.h>
 #include "null_blk.h"
 
-/* zone_size in MBs to sectors. */
-#define ZONE_SIZE_SHIFT		11
+#define MB_TO_SECTS(mb) (((sector_t)mb * SZ_1M) >> SECTOR_SHIFT)
 
 static inline unsigned int null_zone_no(struct nullb_device *dev, sector_t sect)
 {
@@ -12,7 +12,7 @@ static inline unsigned int null_zone_no(struct nullb_device *dev, sector_t sect)
 
 int null_zone_init(struct nullb_device *dev)
 {
-	sector_t dev_size = (sector_t)dev->size * 1024 * 1024;
+	sector_t dev_capacity_sects;
 	sector_t sector = 0;
 	unsigned int i;
 
@@ -25,19 +25,43 @@ int null_zone_init(struct nullb_device *dev)
 		return -EINVAL;
 	}
 
-	dev->zone_size_sects = dev->zone_size << ZONE_SIZE_SHIFT;
-	dev->nr_zones = dev_size >>
-				(SECTOR_SHIFT + ilog2(dev->zone_size_sects));
+	dev_capacity_sects = MB_TO_SECTS(dev->size);
+	dev->zone_size_sects = MB_TO_SECTS(dev->zone_size);
+	dev->nr_zones = dev_capacity_sects >> ilog2(dev->zone_size_sects);
+	if (dev_capacity_sects & (dev->zone_size_sects - 1))
+		dev->nr_zones++;
+
 	dev->zones = kvmalloc_array(dev->nr_zones, sizeof(struct blk_zone),
 			GFP_KERNEL | __GFP_ZERO);
 	if (!dev->zones)
 		return -ENOMEM;
 
-	for (i = 0; i < dev->nr_zones; i++) {
+	if (dev->zone_nr_conv >= dev->nr_zones) {
+		dev->zone_nr_conv = dev->nr_zones - 1;
+		pr_info("null_blk: changed the number of conventional zones to %u",
+			dev->zone_nr_conv);
+	}
+
+	for (i = 0; i <  dev->zone_nr_conv; i++) {
+		struct blk_zone *zone = &dev->zones[i];
+
+		zone->start = sector;
+		zone->len = dev->zone_size_sects;
+		zone->wp = zone->start + zone->len;
+		zone->type = BLK_ZONE_TYPE_CONVENTIONAL;
+		zone->cond = BLK_ZONE_COND_NOT_WP;
+
+		sector += dev->zone_size_sects;
+	}
+
+	for (i = dev->zone_nr_conv; i < dev->nr_zones; i++) {
 		struct blk_zone *zone = &dev->zones[i];
 
 		zone->start = zone->wp = sector;
-		zone->len = dev->zone_size_sects;
+		if (zone->start + dev->zone_size_sects > dev_capacity_sects)
+			zone->len = dev_capacity_sects - zone->start;
+		else
+			zone->len = dev->zone_size_sects;
 		zone->type = BLK_ZONE_TYPE_SEQWRITE_REQ;
 		zone->cond = BLK_ZONE_COND_EMPTY;
 
@@ -50,6 +74,7 @@ int null_zone_init(struct nullb_device *dev)
 void null_zone_exit(struct nullb_device *dev)
 {
 	kvfree(dev->zones);
+	dev->zones = NULL;
 }
 
 static void null_zone_fill_bio(struct nullb_device *dev, struct bio *bio,
@@ -129,6 +154,8 @@ void null_zone_write(struct nullb_cmd *cmd, sector_t sector,
 		if (zone->wp == zone->start + zone->len)
 			zone->cond = BLK_ZONE_COND_FULL;
 		break;
+	case BLK_ZONE_COND_NOT_WP:
+		break;
 	default:
 		/* Invalid zone condition */
 		cmd->error = BLK_STS_IOERR;
@@ -141,6 +168,11 @@ void null_zone_reset(struct nullb_cmd *cmd, sector_t sector)
 	struct nullb_device *dev = cmd->nq->dev;
 	unsigned int zno = null_zone_no(dev, sector);
 	struct blk_zone *zone = &dev->zones[zno];
+
+	if (zone->type == BLK_ZONE_TYPE_CONVENTIONAL) {
+		cmd->error = BLK_STS_IOERR;
+		return;
+	}
 
 	zone->cond = BLK_ZONE_COND_EMPTY;
 	zone->wp = zone->start;

@@ -497,6 +497,7 @@ static bool test_and_set_skip(struct compact_control *cc, struct page *page,
  */
 static bool compact_lock_irqsave(spinlock_t *lock, unsigned long *flags,
 						struct compact_control *cc)
+	__acquires(lock)
 {
 	/* Track if the lock is contended in async mode */
 	if (cc->mode == MIGRATE_ASYNC && !cc->contended) {
@@ -1439,7 +1440,7 @@ fast_isolate_freepages(struct compact_control *cc)
 		if (scan_start) {
 			/*
 			 * Use the highest PFN found above min. If one was
-			 * not found, be pessemistic for direct compaction
+			 * not found, be pessimistic for direct compaction
 			 * and use the min mark.
 			 */
 			if (highest >= min_pfn) {
@@ -1540,6 +1541,10 @@ static void isolate_freepages(struct compact_control *cc)
 		/* Found a block suitable for isolating free pages from. */
 		nr_isolated = isolate_freepages_block(cc, &isolate_start_pfn,
 					block_end_pfn, freelist, stride, false);
+
+		/* Update the skip hint if the full pageblock was scanned */
+		if (isolate_start_pfn == block_end_pfn)
+			update_pageblock_skip(cc, page, block_start_pfn);
 
 		/* Update the skip hint if the full pageblock was scanned */
 		if (isolate_start_pfn == block_end_pfn)
@@ -2631,6 +2636,11 @@ static void compact_node(int nid)
 	}
 }
 
+#ifdef CONFIG_ZSWAP
+extern void zswap_compact(void);
+#else
+static inline void zswap_compact(void) {}
+#endif
 /* Compact all nodes in the system */
 static void compact_nodes(void)
 {
@@ -2641,6 +2651,8 @@ static void compact_nodes(void)
 
 	for_each_online_node(nid)
 		compact_node(nid);
+
+	zswap_compact();
 }
 
 /* The written value is actually unused, all memory is compacted */

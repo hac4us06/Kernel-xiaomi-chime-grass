@@ -28,6 +28,7 @@
 #include <asoc/msm-cdc-pinctrl.h>
 #include "wsa881x.h"
 #include "wsa881x-temp-sensor.h"
+#include "asoc/bolero-slave-internal.h"
 
 #define DRV_NAME "wsa-codec"
 #define WSA881X_NUM_RETRY	5
@@ -1437,7 +1438,7 @@ static int wsa881x_event_notify(struct notifier_block *nb,
 		return -EINVAL;
 
 	switch (event) {
-	case BOLERO_WSA_EVT_PA_OFF_PRE_SSR:
+	case BOLERO_SLV_EVT_PA_OFF_PRE_SSR:
 		snd_soc_component_update_bits(wsa881x->component,
 					      WSA881X_SPKR_DRV_GAIN,
 					      0xF0, 0xC0);

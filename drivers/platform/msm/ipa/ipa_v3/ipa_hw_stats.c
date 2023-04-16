@@ -2235,6 +2235,7 @@ static ssize_t ipa_debugfs_print_drop_stats(struct file *file,
 	return simple_read_from_buffer(ubuf, count, ppos, dbg_buff, nbytes);
 }
 
+<<<<<<< HEAD
 static ssize_t ipa_debugfs_enable_disable_drop_stats(struct file *file,
 	const char __user *ubuf, size_t count, loff_t *ppos)
 {
@@ -2310,6 +2311,8 @@ bail:
 	return ret;
 }
 
+=======
+>>>>>>> wip
 static const struct file_operations ipa3_quota_ops = {
 	.read = ipa_debugfs_print_quota_stats,
 	.write = ipa_debugfs_reset_quota_stats,
@@ -2330,14 +2333,10 @@ static const struct file_operations ipa3_drop_ops = {
 	.write = ipa_debugfs_reset_drop_stats,
 };
 
-static const struct file_operations ipa3_enable_drop_ops = {
-	.write = ipa_debugfs_enable_disable_drop_stats,
-};
 
 int ipa_debugfs_init_stats(struct dentry *parent)
 {
 	const mode_t read_write_mode = 0664;
-	const mode_t write_mode = 0220;
 	struct dentry *file;
 	struct dentry *dent;
 
@@ -2361,13 +2360,6 @@ int ipa_debugfs_init_stats(struct dentry *parent)
 		&ipa3_drop_ops);
 	if (IS_ERR_OR_NULL(file)) {
 		IPAERR("fail to create file %s\n", "drop");
-		goto fail;
-	}
-
-	file = debugfs_create_file("enable_drop_stats", write_mode, dent, NULL,
-		&ipa3_enable_drop_ops);
-	if (IS_ERR_OR_NULL(file)) {
-		IPAERR("fail to create file %s\n", "enable_drop_stats");
 		goto fail;
 	}
 

@@ -20,7 +20,11 @@ config ARM64
 	select ARCH_HAS_KCOV
 	select ARCH_HAS_MEMBARRIER_SYNC_CORE
 	select ARCH_HAS_PTE_SPECIAL
+<<<<<<< HEAD
 	select ARCH_HAS_SET_DIRECT_MAP
+=======
+	select ARCH_HAS_REFCOUNT_FULL
+>>>>>>> wip
 	select ARCH_HAS_SET_MEMORY
 	select ARCH_HAS_SG_CHAIN
 	select ARCH_HAS_STRICT_KERNEL_RWX
@@ -62,7 +66,7 @@ config ARM64
 	select ARCH_SUPPORTS_THINLTO
 	select ARCH_SUPPORTS_SHADOW_CALL_STACK if CC_HAVE_SHADOW_CALL_STACK
 	select ARCH_SUPPORTS_ATOMIC_RMW
-	select ARCH_SUPPORTS_INT128 if GCC_VERSION >= 50000 || CC_IS_CLANG
+	select ARCH_SUPPORTS_INT128
 	select ARCH_SUPPORTS_NUMA_BALANCING
 	select ARCH_WANT_COMPAT_IPC_PARSE_VERSION
 	select ARCH_WANT_FRAME_POINTERS
@@ -82,7 +86,6 @@ config ARM64
 	select DCACHE_WORD_ACCESS
 	select DMA_DIRECT_OPS
 	select EDAC_SUPPORT
-	select FRAME_POINTER
 	select GENERIC_ALLOCATOR
 	select GENERIC_ARCH_TOPOLOGY
 	select GENERIC_CLOCKEVENTS
@@ -117,7 +120,7 @@ config ARM64
 	select HAVE_ARCH_KGDB
 	select HAVE_ARCH_MMAP_RND_BITS
 	select HAVE_ARCH_MMAP_RND_COMPAT_BITS if COMPAT
-	select HAVE_ARCH_PREL32_RELOCATIONS if !LTO_CLANG
+	select HAVE_ARCH_PREL32_RELOCATIONS if !LTO_CLANG && !LTO_GCC
 	select HAVE_ARCH_SECCOMP_FILTER
 	select HAVE_ARCH_STACKLEAK
 	select HAVE_ARCH_THREAD_STRUCT_WHITELIST
@@ -142,8 +145,10 @@ config ARM64
 	select HAVE_GENERIC_DMA_COHERENT
 	select HAVE_HW_BREAKPOINT if PERF_EVENTS
 	select HAVE_IRQ_TIME_ACCOUNTING
-	select HAVE_KERNEL_GZIP
+	select HAVE_LD_DEAD_CODE_DATA_ELIMINATION
+        select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_LZ4
+	select HAVE_LD_DEAD_CODE_DATA_ELIMINATION
 	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP if NUMA
 	select HAVE_NMI
@@ -155,6 +160,7 @@ config ARM64
 	select HAVE_RCU_TABLE_FREE
 	select HAVE_RSEQ
 	select HAVE_STACKPROTECTOR
+	select HAVE_FUTEX_CMPXCHG if FUTEX
 	select HAVE_SYSCALL_TRACEPOINTS
 	select HAVE_KPROBES
 	select HAVE_KRETPROBES
@@ -178,11 +184,48 @@ config ARM64
 	select SWIOTLB
 	select SYSCTL_EXCEPTION_TRACE
 	select THREAD_INFO_IN_TASK
+<<<<<<< HEAD
+=======
+        select ARCH_SUPPORTS_OPTIMIZED_INLINING
+        select OPTIMIZE_INLINING
+	select ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
+	select ARCH_INLINE_SPIN_TRYLOCK
+	select ARCH_INLINE_SPIN_TRYLOCK_BH
+	select ARCH_INLINE_SPIN_LOCK
+	select ARCH_INLINE_SPIN_LOCK_BH
+	select ARCH_INLINE_SPIN_LOCK_IRQ
+	select ARCH_INLINE_SPIN_LOCK_IRQSAVE
+	select ARCH_INLINE_SPIN_UNLOCK
+	select ARCH_INLINE_SPIN_UNLOCK_BH
+	select ARCH_INLINE_SPIN_UNLOCK_IRQ
+	select ARCH_INLINE_SPIN_UNLOCK_IRQRESTORE
+	select ARCH_INLINE_READ_TRYLOCK
+	select ARCH_INLINE_READ_LOCK
+	select ARCH_INLINE_READ_LOCK_BH
+	select ARCH_INLINE_READ_LOCK_IRQ
+	select ARCH_INLINE_READ_LOCK_IRQSAVE
+	select ARCH_INLINE_READ_UNLOCK
+	select ARCH_INLINE_READ_UNLOCK_BH
+	select ARCH_INLINE_READ_UNLOCK_IRQ
+	select ARCH_INLINE_READ_UNLOCK_IRQRESTORE
+	select ARCH_INLINE_WRITE_TRYLOCK
+	select ARCH_INLINE_WRITE_LOCK
+	select ARCH_INLINE_WRITE_LOCK_BH
+	select ARCH_INLINE_WRITE_LOCK_IRQ
+	select ARCH_INLINE_WRITE_LOCK_IRQSAVE
+	select ARCH_INLINE_WRITE_UNLOCK
+	select ARCH_INLINE_WRITE_UNLOCK_BH
+	select ARCH_INLINE_WRITE_UNLOCK_IRQ
+	select ARCH_INLINE_WRITE_UNLOCK_IRQRESTORE
+>>>>>>> wip
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
 config 64BIT
 	def_bool y
+
+config ARCH_SUPPORTS_OPTIMIZED_INLINING
+        def_bool y
 
 config MMU
 	def_bool y
@@ -495,7 +538,7 @@ config ARM64_ERRATUM_1024718
 	help
 	  This option adds work around for Arm Cortex-A55 Erratum 1024718.
 
-	  Affected Cortex-A55 cores (r0p0, r0p1, r1p0) could cause incorrect
+	  Affected Cortex-A55 cores (all revisions) could cause incorrect
 	  update of the hardware dirty bit when the DBM/AP bits are updated
 	  without a break-before-make. The work around is to disable the usage
 	  of hardware DBM locally on the affected cores. CPUs not affected by
@@ -807,6 +850,20 @@ config NR_CPUS
 	# These have to remain sorted largest to smallest
 	default "64"
 
+config LITTLE_CPU_MASK
+	int "Bitmask of available LITTLE CPUs"
+	help
+	  This is a bitmask specifying which of the CPUs are LITTLE in a
+	  heterogeneous system. Use 0 if you are unsure, which just results in
+	  this storing the bitmask of all available CPUs.
+
+config BIG_CPU_MASK
+	int "Bitmask of available big CPUs"
+	help
+	  This is a bitmask specifying which of the CPUs are big in a
+	  heterogeneous system. Use 0 if you are unsure, which just results in
+	  this storing the bitmask of all available CPUs.
+
 config HOTPLUG_CPU
 	bool "Support for hot-pluggable CPUs"
 	select GENERIC_IRQ_MIGRATION
@@ -944,37 +1001,6 @@ config ARCH_MEMORY_PROBE
 # Supported by clang >= 7.0
 config CC_HAVE_SHADOW_CALL_STACK
 	def_bool $(cc-option, -fsanitize=shadow-call-stack -ffixed-x18)
-
-config ARM64_DMA_USE_IOMMU
-	bool "ARM64 DMA iommu integration"
-	select ARM_HAS_SG_CHAIN
-	select NEED_SG_DMA_LENGTH
-	help
-	  Enable using iommu through the standard dma apis.
-	  dma_alloc_coherent() will allocate scatter-gather memory
-	  which is made virtually contiguous via iommu.
-	  Enable if system contains IOMMU hardware.
-
-if ARM64_DMA_USE_IOMMU
-
-config ARM64_DMA_IOMMU_ALIGNMENT
-	int "Maximum PAGE_SIZE order of alignment for DMA IOMMU buffers"
-	range 4 9
-	default 9
-	help
-	  DMA mapping framework by default aligns all buffers to the smallest
-	  PAGE_SIZE order which is greater than or equal to the requested buffer
-	  size. This works well for buffers up to a few hundreds kilobytes, but
-	  for larger buffers it just a waste of address space. Drivers which has
-	  relatively small addressing window (like 64Mib) might run out of
-	  virtual space with just a few allocations.
-
-	  With this parameter you can specify the maximum PAGE_SIZE order for
-	  DMA IOMMU buffers. Larger buffers will be aligned only to this
-	  specified order. The order is expressed as a power of two multiplied
-	  by the PAGE_SIZE.
-
-endif
 
 config SECCOMP
 	bool "Enable seccomp to safely compute untrusted bytecode"
@@ -1122,6 +1148,15 @@ config ARM64_SSBD
 	  by speculative loads.
 
 	  If unsure, say Y.
+
+config MITIGATE_SPECTRE_BRANCH_HISTORY
+	bool "Mitigate Spectre style attacks against branch history" if EXPERT
+	default y
+	help
+	  Speculation attacks against some high-performance processors can
+	  make use of branch history to influence future speculation.
+	  When taking an exception from user-space, a sequence of branches
+	  or a firmware call overwrites the branch history.
 
 config PRINT_VMEMLAYOUT
 	bool "Enable debug option to print kernel virtual memory layout"
@@ -1591,6 +1626,13 @@ config KRYO_PMU_WORKAROUND
 	  overflow interrupts from multiple monitors.
 
 	  Enable this flag for effect SoCs.
+config BOOT_INFO
+	bool "Boot information from bootloader"
+	default y
+	help
+	  On embedded linux device, we try to collect more information from
+	  bootloader to kernel. eg. powerup reason.
+
 
 config BOOT_INFO
 	bool "Boot information from bootloader"

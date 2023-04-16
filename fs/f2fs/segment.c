@@ -1059,9 +1059,15 @@ static void __init_discard_policy(struct f2fs_sb_info *sbi,
 					dcc->min_discard_issue_time;
 		}
 	} else if (discard_type == DPOLICY_FORCE) {
+<<<<<<< HEAD
 		dpolicy->min_interval = dcc->min_discard_issue_time;
 		dpolicy->mid_interval = dcc->mid_discard_issue_time;
 		dpolicy->max_interval = dcc->max_discard_issue_time;
+=======
+		dpolicy->min_interval = 1;
+		dpolicy->mid_interval = DEF_MID_DISCARD_ISSUE_TIME;
+		dpolicy->max_interval = DEF_MAX_DISCARD_ISSUE_TIME;
+>>>>>>> wip
 		dpolicy->io_aware = false;
 	} else if (discard_type == DPOLICY_FSTRIM) {
 		dpolicy->io_aware = false;
@@ -1684,7 +1690,8 @@ static int issue_discard_thread(void *data)
 		wait_event_interruptible_timeout(*q,
 				kthread_should_stop() || freezing(current) ||
 				dcc->discard_wake,
-				msecs_to_jiffies(wait_ms));
+				msecs_to_jiffies((sbi->gc_mode == GC_URGENT) ?
+						 1 : wait_ms));
 
 		if (dcc->discard_wake)
 			dcc->discard_wake = 0;
@@ -3222,7 +3229,23 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	bool from_gc = (type == CURSEG_ALL_DATA_ATGC);
 	struct seg_entry *se = NULL;
 
+<<<<<<< HEAD
 	f2fs_down_read(&SM_I(sbi)->curseg_lock);
+=======
+	if (type == CURSEG_COLD_DATA) {
+		/* GC during CURSEG_COLD_DATA_PINNED allocation */
+		if (down_read_trylock(&sbi->pin_sem)) {
+			put_pin_sem = true;
+		} else {
+			type = CURSEG_WARM_DATA;
+			curseg = CURSEG_I(sbi, type);
+		}
+	} else if (type == CURSEG_COLD_DATA_PINNED) {
+		type = CURSEG_COLD_DATA;
+	}
+
+	down_read(&SM_I(sbi)->curseg_lock);
+>>>>>>> wip
 
 	mutex_lock(&curseg->curseg_mutex);
 	down_write(&sit_i->sentry_lock);
@@ -3305,7 +3328,14 @@ void f2fs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 
 	mutex_unlock(&curseg->curseg_mutex);
 
+<<<<<<< HEAD
 	f2fs_up_read(&SM_I(sbi)->curseg_lock);
+=======
+	up_read(&SM_I(sbi)->curseg_lock);
+
+	if (put_pin_sem)
+		up_read(&sbi->pin_sem);
+>>>>>>> wip
 }
 
 void f2fs_update_device_state(struct f2fs_sb_info *sbi, nid_t ino,

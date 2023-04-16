@@ -158,6 +158,8 @@ enum {
 	FUSE_I_INIT_RDPLUS,
 	/** An operation changing file size is in progress  */
 	FUSE_I_SIZE_UNSTABLE,
+	/* Bad inode */
+	FUSE_I_BAD,
 };
 
 struct fuse_conn;
@@ -354,6 +356,14 @@ struct fuse_req {
 	/** refcount */
 	refcount_t count;
 
+<<<<<<< HEAD
+=======
+	bool user_pages;
+
+	/** Unique ID for the interrupt request */
+	u64 intr_unique;
+
+>>>>>>> wip
 	/* Request flags, updated with test/set/clear_bit() */
 	unsigned long flags;
 
@@ -716,6 +726,7 @@ static inline u64 get_node_id(struct inode *inode)
 	return get_fuse_inode(inode)->nodeid;
 }
 
+<<<<<<< HEAD
 static inline int invalid_nodeid(u64 nodeid)
 {
 	return !nodeid || nodeid == FUSE_ROOT_ID;
@@ -724,6 +735,17 @@ static inline int invalid_nodeid(u64 nodeid)
 static inline u64 fuse_get_attr_version(struct fuse_conn *fc)
 {
 	return atomic64_read(&fc->attr_version);
+=======
+static inline void fuse_make_bad(struct inode *inode)
+{
+	remove_inode_hash(inode);
+	set_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state);
+}
+
+static inline bool fuse_is_bad(struct inode *inode)
+{
+	return unlikely(test_bit(FUSE_I_BAD, &get_fuse_inode(inode)->state));
+>>>>>>> wip
 }
 
 /** Device operations */

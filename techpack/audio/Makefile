@@ -1,6 +1,7 @@
 # auto-detect subdirs
 ifeq ($(CONFIG_ARCH_SDXPOORWILLS), y)
 include $(srctree)/techpack/audio/config/sdxpoorwillsauto.conf
+<<<<<<< HEAD
 endif
 ifeq ($(CONFIG_ARCH_SM8150), y)
 include $(srctree)/techpack/audio/config/sm8150auto.conf
@@ -13,11 +14,32 @@ include $(srctree)/techpack/audio/config/konaauto.conf
 endif
 ifeq ($(CONFIG_ARCH_SDM660), y)
 include $(srctree)/techpack/audio/config/sdm660auto.conf
+=======
+export $(shell sed 's/=.*//' $(srctree)/techpack/audio/config/sdxpoorwillsauto.conf)
+endif
+ifeq ($(CONFIG_ARCH_SM8150), y)
+include $(srctree)/techpack/audio/config/sm8150auto.conf
+export $(shell sed 's/=.*//' $(srctree)/techpack/audio/config/sm8150auto.conf)
+endif
+ifeq ($(CONFIG_ARCH_SDMSHRIKE), y)
+include $(srctree)/techpack/audio/config/sm8150auto.conf
+export $(shell sed 's/=.*//' $(srctree)/techpack/audio/config/sm8150auto.conf)
+endif
+ifeq ($(CONFIG_ARCH_KONA), y)
+include $(srctree)/techpack/audio/config/konaauto.conf
+export $(shell sed 's/=.*//' $(srctree)/techpack/audio/config/konaauto.conf)
+>>>>>>> wip
 endif
 ifeq ($(CONFIG_ARCH_BENGAL), y)
 include $(srctree)/techpack/audio/config/bengalauto.conf
 export $(shell sed 's/=.*//' $(srctree)/techpack/audio/config/bengalauto.conf)
 endif
+<<<<<<< HEAD
+=======
+ifeq ($(CONFIG_ARCH_SDM660), y)
+include $(srctree)/techpack/audio/config/sdm660auto.conf
+endif
+>>>>>>> wip
 
 # Use USERINCLUDE when you must reference the UAPI directories only.
 USERINCLUDE     += \
@@ -46,15 +68,26 @@ ifeq ($(CONFIG_ARCH_KONA), y)
 LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/konaautoconf.h
 endif
+<<<<<<< HEAD
 ifeq ($(CONFIG_ARCH_SDM660), y)
 LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/sdm660autoconf.h
 endif
+=======
+>>>>>>> wip
 ifeq ($(CONFIG_ARCH_BENGAL), y)
 LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/bengalautoconf.h
 endif
 
+<<<<<<< HEAD
+=======
+ifeq ($(CONFIG_ARCH_SDM660), y)
+LINUXINCLUDE    += \
+                -include $(srctree)/techpack/audio/config/sdm660autoconf.h
+endif
+
+>>>>>>> wip
 obj-y += soc/
 obj-y += dsp/
 obj-y += ipc/

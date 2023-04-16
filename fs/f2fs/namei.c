@@ -885,6 +885,11 @@ static int __f2fs_tmpfile(struct inode *dir,
 		spin_lock(&inode->i_lock);
 		inode->i_state |= I_LINKABLE;
 		spin_unlock(&inode->i_lock);
+<<<<<<< HEAD
+=======
+
+		*whiteout = inode;
+>>>>>>> wip
 	} else {
 		if (dentry)
 			d_tmpfile(dentry, inode);

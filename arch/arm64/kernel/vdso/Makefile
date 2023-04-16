@@ -27,6 +27,7 @@ endif
 
 ccflags-y := -fno-common -fno-builtin -fno-stack-protector -ffixed-x18
 ccflags-y += -DDISABLE_BRANCH_PROFILING
+ccflags-y += $(call cc-option, -fno-whole-program)
 
 VDSO_LDFLAGS := -Bsymbolic
 
@@ -36,6 +37,7 @@ UBSAN_SANITIZE			:= n
 OBJECT_FILES_NON_STANDARD	:= y
 KCOV_INSTRUMENT			:= n
 
+<<<<<<< HEAD
 # Force -O2 to avoid libgcc dependencies
 CFLAGS_REMOVE_vgettimeofday.o = -pg -Os
 CFLAGS_vgettimeofday.o = -fPIC -fasynchronous-unwind-tables
@@ -45,6 +47,9 @@ CFLAGS_vgettimeofday.o = -O2
 else
 CFLAGS_vgettimeofday.o = -O3
 endif
+=======
+CFLAGS_vgettimeofday.o = -O3 -mcmodel=tiny -fasynchronous-unwind-tables
+>>>>>>> wip
 
 ifneq ($(c-gettimeofday-y),)
   CFLAGS_vgettimeofday.o += -include $(c-gettimeofday-y)

@@ -1769,7 +1769,10 @@ static int lpm_probe(struct platform_device *pdev)
 	}
 
 	set_update_ipi_history_callback(update_ipi_history);
+<<<<<<< HEAD
 
+=======
+>>>>>>> wip
 	return 0;
 failed:
 	free_cluster_node(lpm_root_node);

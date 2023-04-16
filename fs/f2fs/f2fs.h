@@ -234,6 +234,7 @@ enum {
 #define DEF_MID_DISCARD_ISSUE_TIME	500	/* 500 ms, if device busy */
 #define DEF_MAX_DISCARD_ISSUE_TIME	60000	/* 60 s, if no candidates */
 #define DEF_DISCARD_URGENT_UTIL		80	/* do more discard over 80% */
+#define DEF_MAX_DISCARD_URGENT_ISSUE_TIME	10000	/* 10 s, if no candidates on high utilization */
 #define DEF_CP_INTERVAL			60	/* 60 secs */
 #define DEF_IDLE_INTERVAL		5	/* 5 secs */
 #define DEF_DISABLE_INTERVAL		5	/* 5 secs */
@@ -572,8 +573,8 @@ enum {
 
 #define DEFAULT_RETRY_IO_COUNT	8	/* maximum retry read IO or flush count */
 
-/* congestion wait timeout value, default: 20ms */
-#define	DEFAULT_IO_TIMEOUT	(msecs_to_jiffies(20))
+/* congestion wait timeout value, default: 6ms */
+#define	DEFAULT_IO_TIMEOUT	(msecs_to_jiffies(6))
 
 /* maximum retry quota flush count */
 #define DEFAULT_RETRY_QUOTA_FLUSH_COUNT		8
@@ -1732,10 +1733,14 @@ struct f2fs_sb_info {
 	unsigned int cur_victim_sec;		/* current victim section num */
 	unsigned int gc_mode;			/* current GC state */
 	unsigned int next_victim_seg[2];	/* next segment in victim section */
+<<<<<<< HEAD
 	spinlock_t gc_urgent_high_lock;
 	bool gc_urgent_high_limited;		/* indicates having limited trial count */
 	unsigned int gc_urgent_high_remaining;	/* remaining trial count for GC_URGENT_HIGH */
 
+=======
+	unsigned int rapid_gc;			/* is rapid GC running */
+>>>>>>> wip
 	/* for skip statistic */
 	unsigned int atomic_files;		/* # of opened atomic file */
 	unsigned long long skipped_gc_rwsem;		/* FG_GC only */
@@ -1816,6 +1821,7 @@ struct f2fs_sb_info {
 	struct kmem_cache *inline_xattr_slab;	/* inline xattr entry */
 	unsigned int inline_xattr_slab_size;	/* default inline xattr slab size */
 
+<<<<<<< HEAD
 	/* For reclaimed segs statistics per each GC mode */
 	unsigned int gc_segment_mode;		/* GC state for reclaimed segments */
 	unsigned int gc_reclaimed_segs[MAX_GC_MODE];	/* Reclaimed segs for each mode */
@@ -1858,6 +1864,9 @@ struct f2fs_sb_info {
 	spinlock_t iostat_lat_lock;
 	struct iostat_lat_info *iostat_io_lat;
 #endif
+=======
+	struct list_head list;
+>>>>>>> wip
 };
 
 struct f2fs_private_dio {
@@ -3581,6 +3590,8 @@ bool f2fs_empty_dir(struct inode *dir);
 
 static inline int f2fs_add_link(struct dentry *dentry, struct inode *inode)
 {
+	if (fscrypt_is_nokey_name(dentry))
+		return -ENOKEY;
 	return f2fs_do_add_link(d_inode(dentry->d_parent), &dentry->d_name,
 				inode, inode->i_ino, inode->i_mode);
 }
@@ -3866,6 +3877,11 @@ void f2fs_destroy_post_read_wq(struct f2fs_sb_info *sbi);
  */
 int f2fs_start_gc_thread(struct f2fs_sb_info *sbi);
 void f2fs_stop_gc_thread(struct f2fs_sb_info *sbi);
+void f2fs_gc_sbi_list_add(struct f2fs_sb_info *sbi);
+void f2fs_gc_sbi_list_del(struct f2fs_sb_info *sbi);
+void __init f2fs_init_rapid_gc(void);
+void __exit f2fs_destroy_rapid_gc(void);
+
 block_t f2fs_start_bidx_of_node(unsigned int node_ofs, struct inode *inode);
 int f2fs_gc(struct f2fs_sb_info *sbi, struct f2fs_gc_control *gc_control);
 void f2fs_build_gc_manager(struct f2fs_sb_info *sbi);

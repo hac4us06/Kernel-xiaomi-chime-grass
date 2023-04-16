@@ -3060,7 +3060,7 @@ void reweight_task(struct task_struct *p, int prio)
  *
  *                     tg->weight * grq->load.weight
  *   ge->load.weight = -----------------------------               (1)
- *			  \Sum grq->load.weight
+ *                       \Sum grq->load.weight
  *
  * Now, because computing that sum is prohibitively expensive to compute (been
  * there, done that) we approximate it with this average stuff. The average
@@ -3074,7 +3074,7 @@ void reweight_task(struct task_struct *p, int prio)
  *
  *                     tg->weight * grq->avg.load_avg
  *   ge->load.weight = ------------------------------              (3)
- *				tg->load_avg
+ *                             tg->load_avg
  *
  * Where: tg->load_avg ~= \Sum grq->avg.load_avg
  *
@@ -3090,7 +3090,7 @@ void reweight_task(struct task_struct *p, int prio)
  *
  *                     tg->weight * grq->load.weight
  *   ge->load.weight = ----------------------------- = tg->weight   (4)
- *			    grp->load.weight
+ *                         grp->load.weight
  *
  * That is, the sum collapses because all other CPUs are idle; the UP scenario.
  *
@@ -3109,7 +3109,7 @@ void reweight_task(struct task_struct *p, int prio)
  *
  *                     tg->weight * grq->load.weight
  *   ge->load.weight = -----------------------------		   (6)
- *				tg_load_avg'
+ *                             tg_load_avg'
  *
  * Where:
  *
@@ -4106,7 +4106,7 @@ static inline void adjust_cpus_for_packing(struct task_struct *p,
 	if (*best_idle_cpu == -1 || *target_cpu == -1)
 		return;
 
-	if (prefer_spread_on_idle(*best_idle_cpu, false))
+	if (prefer_spread_on_idle(*best_idle_cpu))
 		fbt_env->need_idle |= 2;
 
 #ifdef CONFIG_SCHED_WALT
@@ -5088,7 +5088,7 @@ static const u64 cfs_bandwidth_slack_period = 5 * NSEC_PER_MSEC;
 static int runtime_refresh_within(struct cfs_bandwidth *cfs_b, u64 min_expire)
 {
 	struct hrtimer *refresh_timer = &cfs_b->period_timer;
-	u64 remaining;
+	s64 remaining;
 
 	/* if the call-back is running a quota refresh is already occurring */
 	if (hrtimer_callback_running(refresh_timer))
@@ -5096,7 +5096,7 @@ static int runtime_refresh_within(struct cfs_bandwidth *cfs_b, u64 min_expire)
 
 	/* is a quota refresh about to occur? */
 	remaining = ktime_to_ns(hrtimer_expires_remaining(refresh_timer));
-	if (remaining < min_expire)
+	if (remaining < (s64)min_expire)
 		return 1;
 
 	return 0;
@@ -5574,8 +5574,11 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se;
+<<<<<<< HEAD
 	bool prefer_idle = sched_feat(EAS_PREFER_IDLE) ?
 				(schedtune_prefer_idle(p) > 0) : 0;
+=======
+>>>>>>> wip
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 
 	/*
@@ -5669,8 +5672,12 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		 * overutilized. Hopefully the cpu util will be back to
 		 * normal before next overutilized check.
 		 */
+<<<<<<< HEAD
 		if (!task_new &&
 		    !(prefer_idle && rq->nr_running == 1))
+=======
+		if (!task_new)
+>>>>>>> wip
 			update_overutilized_status(rq);
 	}
 
@@ -6719,6 +6726,7 @@ static inline int select_idle_smt(struct task_struct *p, struct sched_domain *sd
  */
 static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int target)
 {
+	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
 	struct sched_domain *this_sd;
 	u64 avg_cost, avg_idle;
 	u64 time, cost;
@@ -6749,7 +6757,9 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 
 	time = local_clock();
 
-	for_each_cpu_wrap(cpu, sched_domain_span(sd), target) {
+	cpumask_and(cpus, sched_domain_span(sd), &p->cpus_allowed);
+
+	for_each_cpu_wrap(cpu, cpus, target) {
 		if (!--nr)
 			return -1;
 		if (!cpumask_test_cpu(cpu, &p->cpus_allowed))
@@ -8133,9 +8143,7 @@ unlock:
 	 * Pick the prev CPU, if best energy CPU can't saves at least 6% of
 	 * the energy used by prev_cpu.
 	 */
-	if (!(idle_cpu(best_energy_cpu) &&
-	    idle_get_state_idx(cpu_rq(best_energy_cpu)) <= 0) &&
-	    (prev_energy != ULONG_MAX) && (best_energy_cpu != prev_cpu) &&
+	if ((prev_energy != ULONG_MAX) && (best_energy_cpu != prev_cpu)  &&
 	    ((prev_energy - best_energy) <= prev_energy >> 4))
 		best_energy_cpu = prev_cpu;
 
@@ -9427,7 +9435,7 @@ static void update_blocked_averages(int cpu)
 		/* Propagate pending load changes to the parent, if any: */
 		se = cfs_rq->tg->se[cpu];
 		if (se && !skip_blocked_update(se))
-			update_load_avg(cfs_rq_of(se), se, 0);
+			update_load_avg(cfs_rq_of(se), se, UPDATE_TG);
 
 		/*
 		 * There can be a lot of idle CPU cgroups.  Don't let fully
@@ -10066,19 +10074,10 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 	if (sgs->group_type < busiest->group_type)
 		return false;
 
-	/*
-	 * This sg and busiest are classified as same. when prefer_spread
-	 * is true, we want to maximize the chance of pulling taks, so
-	 * prefer to pick sg with more runnable tasks and break the ties
-	 * with utilization.
-	 */
-	if (env->prefer_spread) {
-		if (sgs->sum_nr_running < busiest->sum_nr_running)
-			return false;
-		if (sgs->sum_nr_running > busiest->sum_nr_running)
-			return true;
-		return sgs->group_util > busiest->group_util;
-	}
+	if (env->prefer_spread && env->idle != CPU_NOT_IDLE &&
+		(sgs->sum_nr_running > busiest->sum_nr_running) &&
+		(sgs->group_util > busiest->group_util))
+		return true;
 
 	if (sgs->avg_load <= busiest->avg_load)
 		return false;
@@ -10113,6 +10112,10 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 		return false;
 
 asym_packing:
+
+	if (env->prefer_spread &&
+		(sgs->sum_nr_running < busiest->sum_nr_running))
+		return false;
 
 	/* This is the busiest node in its class. */
 	if (!(env->sd->flags & SD_ASYM_PACKING))
@@ -10584,6 +10587,15 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 
 		return fix_small_imbalance(env, sds);
 	}
+
+	/*
+	 * If we couldn't find any imbalance, then boost the imbalance
+	 * with the group util.
+	 */
+	if (env->prefer_spread && !env->imbalance &&
+		env->idle != CPU_NOT_IDLE &&
+		busiest->sum_nr_running > busiest->group_weight)
+		env->imbalance = busiest->group_util;
 }
 
 /******* find_busiest_group() helpers end here *********************/
@@ -10619,7 +10631,7 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 			int cpu_local, cpu_busiest;
 			unsigned long capacity_local, capacity_busiest;
 
-			if (env->idle != CPU_NEWLY_IDLE && !env->prefer_spread)
+			if (env->idle != CPU_NEWLY_IDLE)
 				goto out_balanced;
 
 			if (!sds.local || !sds.busiest)
@@ -10668,13 +10680,9 @@ static struct sched_group *find_busiest_group(struct lb_env *env)
 	/*
 	 * When dst_cpu is idle, prevent SMP nice and/or asymmetric group
 	 * capacities from resulting in underutilization due to avg_load.
-	 *
-	 * When prefer_spread is enabled, force the balance even when
-	 * busiest group has some capacity but loaded with more than 1
-	 * task.
 	 */
 	if (env->idle != CPU_NOT_IDLE && group_has_capacity(env, local) &&
-	    (busiest->group_no_capacity || env->prefer_spread))
+	    busiest->group_no_capacity)
 		goto force_balance;
 
 	/* Misfit tasks should be dealt with regardless of the avg load */
@@ -10720,14 +10728,6 @@ force_balance:
 	/* Looks like there is an imbalance. Compute it */
 	env->src_grp_type = busiest->group_type;
 	calculate_imbalance(env, &sds);
-
-	/*
-	 * If we couldn't find any imbalance, then boost the imbalance
-	 * based on the group util.
-	 */
-	if (!env->imbalance && env->prefer_spread)
-		env->imbalance = (busiest->group_util >> 1);
-
 	trace_sched_load_balance_stats(sds.busiest->cpumask[0],
 				busiest->group_type, busiest->avg_load,
 				busiest->load_per_task,	sds.local->cpumask[0],
@@ -10837,7 +10837,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 		 * to: wl_i * capacity_j > wl_j * capacity_i;  where j is
 		 * our previous maximum.
 		 */
-		if (wl * busiest_capacity >= busiest_load * capacity) {
+		if (wl * busiest_capacity > busiest_load * capacity) {
 			busiest_load = wl;
 			busiest_capacity = capacity;
 			busiest = rq;
@@ -10984,8 +10984,7 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 	};
 
 	env.prefer_spread = (idle != CPU_NOT_IDLE &&
-				prefer_spread_on_idle(this_cpu,
-				idle == CPU_NEWLY_IDLE) &&
+				prefer_spread_on_idle(this_cpu) &&
 				!((sd->flags & SD_ASYM_CPUCAPACITY) &&
 				 !is_asym_cap_cpu(this_cpu)));
 
@@ -11517,8 +11516,7 @@ static void rebalance_domains(struct rq *rq, enum cpu_idle_type idle)
 		}
 		max_cost += sd->max_newidle_lb_cost;
 
-		if (!sd_overutilized(sd) && !prefer_spread_on_idle(cpu,
-					idle == CPU_NEWLY_IDLE))
+		if (!sd_overutilized(sd) && !prefer_spread_on_idle(cpu))
 			continue;
 
 		if (!(sd->flags & SD_LOAD_BALANCE))
@@ -11700,12 +11698,7 @@ static void kick_ilb(unsigned int flags)
 {
 	int ilb_cpu;
 
-	/*
-	 * Increase nohz.next_balance only when if full ilb is triggered but
-	 * not if we only update stats.
-	 */
-	if (flags & NOHZ_BALANCE_KICK)
-		nohz.next_balance = jiffies+1;
+	nohz.next_balance++;
 
 	ilb_cpu = find_new_ilb();
 
@@ -11777,7 +11770,7 @@ static void nohz_balancer_kick(struct rq *rq)
 	 */
 	if (static_branch_likely(&sched_energy_present)) {
 		if (rq->nr_running >= 2 && (cpu_overutilized(cpu) ||
-			prefer_spread_on_idle(cpu, false)))
+			prefer_spread_on_idle(cpu)))
 			flags = NOHZ_KICK_MASK;
 		goto out;
 	}
@@ -12018,14 +12011,6 @@ static bool _nohz_idle_balance(struct rq *this_rq, unsigned int flags,
 		}
 	}
 
-	/*
-	 * next_balance will be updated only when there is a need.
-	 * When the CPU is attached to null domain for ex, it will not be
-	 * updated.
-	 */
-	if (likely(update_next_balance))
-		nohz.next_balance = next_balance;
-
 	/* Newly idle CPU doesn't need an update */
 	if (idle != CPU_NEWLY_IDLE) {
 		update_blocked_averages(this_cpu);
@@ -12045,6 +12030,14 @@ abort:
 	/* There is still blocked load, enable periodic update */
 	if (has_blocked_load)
 		WRITE_ONCE(nohz.has_blocked, 1);
+
+	/*
+	 * next_balance will be updated only when there is a need.
+	 * When the CPU is attached to null domain for ex, it will not be
+	 * updated.
+	 */
+	if (likely(update_next_balance))
+		nohz.next_balance = next_balance;
 
 	return ret;
 }
@@ -12155,7 +12148,10 @@ int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 	int pulled_task = 0;
 	u64 curr_cost = 0;
 	u64 avg_idle = this_rq->avg_idle;
+<<<<<<< HEAD
 #ifdef CONFIG_SCHED_WALT
+=======
+>>>>>>> wip
 	bool prefer_spread = prefer_spread_on_idle(this_cpu);
 	bool force_lb = (!is_min_capacity_cpu(this_cpu) &&
 				silver_has_big_tasks() &&
@@ -12486,16 +12482,22 @@ static void propagate_entity_cfs_rq(struct sched_entity *se)
 {
 	struct cfs_rq *cfs_rq;
 
+	list_add_leaf_cfs_rq(cfs_rq_of(se));
+
 	/* Start to propagate at parent */
 	se = se->parent;
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
 
-		if (cfs_rq_throttled(cfs_rq))
-			break;
+		if (!cfs_rq_throttled(cfs_rq)){
+			update_load_avg(cfs_rq, se, UPDATE_TG);
+			list_add_leaf_cfs_rq(cfs_rq);
+			continue;
+		}
 
-		update_load_avg(cfs_rq, se, UPDATE_TG);
+		if (list_add_leaf_cfs_rq(cfs_rq))
+			break;
 	}
 }
 #else

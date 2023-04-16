@@ -694,7 +694,6 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 
 	return rc;
 }
-
 /*
 static int dsi_panel_update_pwm_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
@@ -756,7 +755,7 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 		backlight_val = true;
 	else
 		backlight_val = false;
-	
+
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
 

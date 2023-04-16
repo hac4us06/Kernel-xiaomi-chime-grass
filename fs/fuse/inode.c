@@ -318,7 +318,7 @@ struct inode *fuse_iget(struct super_block *sb, u64 nodeid,
 		unlock_new_inode(inode);
 	} else if ((inode->i_mode ^ attr->mode) & S_IFMT) {
 		/* Inode has changed type, any I/O on the old should fail */
-		make_bad_inode(inode);
+		fuse_make_bad(inode);
 		iput(inode);
 		goto retry;
 	}
@@ -830,7 +830,12 @@ static void sanitize_global_limit(unsigned *limit)
 	 * 1/2^13 of the total memory, assuming 392 bytes per request.
 	 */
 	if (*limit == 0)
+<<<<<<< HEAD
 		*limit = ((totalram_pages << PAGE_SHIFT) >> 13) / 392;
+=======
+		*limit = ((totalram_pages() << PAGE_SHIFT) >> 13) /
+			 sizeof(struct fuse_req);
+>>>>>>> wip
 
 	if (*limit >= 1 << 16)
 		*limit = (1 << 16) - 1;

@@ -10,7 +10,6 @@
 #include <drm/drm_notifier.h>
 #include <linux/backlight.h>
 #include <linux/compaction.h>
-
 #include "msm_drv.h"
 #include "sde_connector.h"
 #include "msm_mmu.h"

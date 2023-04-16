@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <linux/clk.h>
@@ -649,6 +650,7 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.hs_ext_micbias = true,
 	.key_code[0] = KEY_MEDIA,
 	.key_code[1] = KEY_VOICECOMMAND,
+<<<<<<< HEAD
 #if defined(CONFIG_MACH_XIAOMI_LIME) || defined(CONFIG_MACH_POCO_CITRUS)
 	.key_code[2] = BTN_1,
 	.key_code[3] = BTN_2,
@@ -656,6 +658,10 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.key_code[2] = KEY_VOLUMEUP,
 	.key_code[3] = KEY_VOLUMEDOWN,
 #endif
+=======
+	.key_code[2] = BTN_1,
+	.key_code[3] = BTN_2,
+>>>>>>> wip
 	.key_code[4] = 0,
 	.key_code[5] = 0,
 	.key_code[6] = 0,

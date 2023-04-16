@@ -44,7 +44,8 @@ enum {
 	BINDER_DEBUG_BUFFER_ALLOC           = 1U << 2,
 	BINDER_DEBUG_BUFFER_ALLOC_ASYNC     = 1U << 3,
 };
-static uint32_t binder_alloc_debug_mask = BINDER_DEBUG_USER_ERROR;
+
+static uint32_t binder_alloc_debug_mask = 0;
 
 module_param_named(debug_mask, binder_alloc_debug_mask,
 		   uint, 0644);
@@ -695,7 +696,7 @@ static void binder_free_buf_locked(struct binder_alloc *alloc,
 	BUG_ON(buffer->user_data > alloc->buffer + alloc->buffer_size);
 
 	if (buffer->async_transaction) {
-		alloc->free_async_space += size + sizeof(struct binder_buffer);
+		alloc->free_async_space += buffer_size + sizeof(struct binder_buffer);
 
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC_ASYNC,
 			     "%d: binder_free_buf size %zd async free %zd\n",

@@ -16,6 +16,7 @@
 
 #include <linux/stddef.h>
 #include <linux/mm.h>
+#include <linux/highmem.h>
 #include <linux/swap.h>
 #include <linux/interrupt.h>
 #include <linux/pagemap.h>
@@ -75,6 +76,8 @@
 #include <asm/div64.h>
 #include "internal.h"
 
+atomic_long_t kswapd_waiters = ATOMIC_LONG_INIT(0);
+
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
 #define MIN_PERCPU_PAGELIST_FRACTION	(8)
@@ -127,7 +130,8 @@ EXPORT_SYMBOL(node_states);
 /* Protect totalram_pages and zone->managed_pages */
 static DEFINE_SPINLOCK(managed_page_count_lock);
 
-unsigned long totalram_pages __read_mostly;
+atomic_long_t _totalram_pages __read_mostly;
+EXPORT_SYMBOL(_totalram_pages);
 unsigned long totalreserve_pages __read_mostly;
 unsigned long totalcma_pages __read_mostly;
 
@@ -320,7 +324,25 @@ compound_page_dtor * const compound_page_dtors[] = {
  */
 int min_free_kbytes = 1024;
 int user_min_free_kbytes = -1;
+<<<<<<< HEAD
 int watermark_scale_factor = 10;
+=======
+#ifdef CONFIG_DISCONTIGMEM
+/*
+ * DiscontigMem defines memory ranges as separate pg_data_t even if the ranges
+ * are not on separate NUMA nodes. Functionally this works but with
+ * watermark_boost_factor, it can reclaim prematurely as the ranges can be
+ * quite small. By default, do not boost watermarks on discontigmem as in
+ * many cases very high-order allocations like THP are likely to be
+ * unsupported and the premature reclaim offsets the advantage of long-term
+ * fragmentation avoidance.
+ */
+int watermark_boost_factor __read_mostly;
+#else
+int watermark_boost_factor __read_mostly = 15000;
+#endif
+int watermark_scale_factor = 100;
+>>>>>>> wip
 
 /*
  * Extra memory for the system to try freeing. Used to temporarily
@@ -1130,8 +1152,11 @@ static void kernel_init_free_pages(struct page *page, int numpages)
 {
 	int i;
 
+	/* s390's use of memset() could override KASAN redzones. */
+	kasan_disable_current();
 	for (i = 0; i < numpages; i++)
 		clear_highpage(page + i);
+	kasan_enable_current();
 }
 
 static __always_inline bool free_pages_prepare(struct page *page,
@@ -4373,6 +4398,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	int no_progress_loops;
 	unsigned int cpuset_mems_cookie;
 	int reserve_flags;
+	bool woke_kswapd = false;
 
 	/*
 	 * We also sanity check to catch abuse of atomic reserves being used by
@@ -4406,8 +4432,17 @@ retry_cpuset:
 	if (!ac->preferred_zoneref->zone)
 		goto nopage;
 
+<<<<<<< HEAD
 	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
+=======
+	if (gfp_mask & __GFP_KSWAPD_RECLAIM) {
+		if (!woke_kswapd) {
+			atomic_long_inc(&kswapd_waiters);
+			woke_kswapd = true;
+		}
+>>>>>>> wip
 		wake_all_kswapds(order, gfp_mask, ac);
+	}
 
 	/*
 	 * The adjusted alloc_flags might result in immediate success, so try
@@ -4436,6 +4471,28 @@ retry_cpuset:
 						&compact_result);
 		if (page)
 			goto got_pg;
+
+		 if (order >= pageblock_order && (gfp_mask & __GFP_IO)) {
+			/*
+			 * If allocating entire pageblock(s) and compaction
+			 * failed because all zones are below low watermarks
+			 * or is prohibited because it recently failed at this
+			 * order, fail immediately.
+			 *
+			 * Reclaim is
+			 *  - potentially very expensive because zones are far
+			 *    below their low watermarks or this is part of very
+			 *    bursty high order allocations,
+			 *  - not guaranteed to help because isolate_freepages()
+			 *    may not iterate over freed pages as part of its
+			 *    linear scan, and
+			 *  - unlikely to make entire pageblocks free on its
+			 *    own.
+			 */
+			if (compact_result == COMPACT_SKIPPED ||
+			    compact_result == COMPACT_DEFERRED)
+				goto nopage;
+		}
 
 		/*
 		 * Checks for costly allocations with __GFP_NORETRY, which
@@ -4548,8 +4605,10 @@ retry:
 	/* Avoid allocations with no watermarks from looping endlessly */
 	if (tsk_is_oom_victim(current) &&
 	    (alloc_flags == ALLOC_OOM ||
-	     (gfp_mask & __GFP_NOMEMALLOC)))
+	     (gfp_mask & __GFP_NOMEMALLOC))) {
+		gfp_mask |= __GFP_NOWARN;
 		goto nopage;
+	}
 
 	/* Retry as long as the OOM killer is making progress */
 	if (did_some_progress) {
@@ -4603,9 +4662,12 @@ nopage:
 		goto retry;
 	}
 fail:
-	warn_alloc(gfp_mask, ac->nodemask,
-			"page allocation failure: order:%u", order);
 got_pg:
+	if (woke_kswapd)
+		atomic_long_dec(&kswapd_waiters);
+	if (!page)
+		warn_alloc(gfp_mask, ac->nodemask,
+				"page allocation failure: order:%u", order);
 	return page;
 }
 
@@ -4844,6 +4906,11 @@ refill:
 		if (!page_ref_sub_and_test(page, nc->pagecnt_bias))
 			goto refill;
 
+		if (unlikely(nc->pfmemalloc)) {
+			free_the_page(page, compound_order(page));
+			goto refill;
+		}
+
 #if (PAGE_SIZE < PAGE_FRAG_CACHE_MAX_SIZE)
 		/* if size can vary use size else just use PAGE_SIZE */
 		size = nc->size;
@@ -5059,11 +5126,11 @@ EXPORT_SYMBOL_GPL(si_mem_available);
 
 void si_meminfo(struct sysinfo *val)
 {
-	val->totalram = totalram_pages;
+	val->totalram = totalram_pages();
 	val->sharedram = global_node_page_state(NR_SHMEM);
 	val->freeram = global_zone_page_state(NR_FREE_PAGES);
 	val->bufferram = nr_blockdev_pages();
-	val->totalhigh = totalhigh_pages;
+	val->totalhigh = totalhigh_pages();
 	val->freehigh = nr_free_highpages();
 	val->mem_unit = PAGE_SIZE;
 }
@@ -5377,7 +5444,7 @@ static int build_zonerefs_node(pg_data_t *pgdat, struct zoneref *zonerefs)
 	do {
 		zone_type--;
 		zone = pgdat->node_zones + zone_type;
-		if (managed_zone(zone)) {
+		if (populated_zone(zone)) {
 			zoneref_set_zone(zone, &zonerefs[nr_zones++]);
 			check_highest_zone(zone_type);
 		}
@@ -5402,15 +5469,6 @@ static int __parse_numa_zonelist_order(char *s)
 	}
 	return 0;
 }
-
-static __init int setup_numa_zonelist_order(char *s)
-{
-	if (!s)
-		return 0;
-
-	return __parse_numa_zonelist_order(s);
-}
-early_param("numa_zonelist_order", setup_numa_zonelist_order);
 
 char numa_zonelist_order[] = "Node";
 
@@ -7141,9 +7199,16 @@ restart:
 
 out2:
 	/* Align start of ZONE_MOVABLE on all nids to MAX_ORDER_NR_PAGES */
-	for (nid = 0; nid < MAX_NUMNODES; nid++)
+	for (nid = 0; nid < MAX_NUMNODES; nid++) {
+		unsigned long start_pfn, end_pfn;
+
 		zone_movable_pfn[nid] =
 			roundup(zone_movable_pfn[nid], MAX_ORDER_NR_PAGES);
+
+		get_pfn_range_for_nid(nid, &start_pfn, &end_pfn);
+		if (zone_movable_pfn[nid] >= end_pfn)
+			zone_movable_pfn[nid] = 0;
+	}
 
 out:
 	/* restore the node_state */
@@ -7321,10 +7386,10 @@ void adjust_managed_page_count(struct page *page, long count)
 {
 	spin_lock(&managed_page_count_lock);
 	page_zone(page)->managed_pages += count;
-	totalram_pages += count;
+	totalram_pages_add(count);
 #ifdef CONFIG_HIGHMEM
 	if (PageHighMem(page))
-		totalhigh_pages += count;
+		totalhigh_pages_add(count);
 #endif
 	spin_unlock(&managed_page_count_lock);
 }
@@ -7367,9 +7432,9 @@ EXPORT_SYMBOL(free_reserved_area);
 void free_highmem_page(struct page *page)
 {
 	__free_reserved_page(page);
-	totalram_pages++;
+	totalram_pages_inc();
 	page_zone(page)->managed_pages++;
-	totalhigh_pages++;
+	totalhigh_pages_inc();
 }
 #endif
 
@@ -7396,7 +7461,7 @@ void __init mem_init_print_info(const char *str)
 	 */
 #define adj_init_size(start, end, size, pos, adj) \
 	do { \
-		if (start <= pos && pos < end && size > adj) \
+		if (&start[0] <= &pos[0] && &pos[0] < &end[0] && size > adj) \
 			size -= adj; \
 	} while (0)
 
@@ -7418,10 +7483,10 @@ void __init mem_init_print_info(const char *str)
 		physpages << (PAGE_SHIFT - 10),
 		codesize >> 10, datasize >> 10, rosize >> 10,
 		(init_data_size + init_code_size) >> 10, bss_size >> 10,
-		(physpages - totalram_pages - totalcma_pages) << (PAGE_SHIFT - 10),
+		(physpages - totalram_pages() - totalcma_pages) << (PAGE_SHIFT - 10),
 		totalcma_pages << (PAGE_SHIFT - 10),
 #ifdef	CONFIG_HIGHMEM
-		totalhigh_pages << (PAGE_SHIFT - 10),
+		totalhigh_pages() << (PAGE_SHIFT - 10),
 #endif
 		str ? ", " : "", str ? str : "");
 }
@@ -7501,6 +7566,7 @@ static void calculate_totalreserve_pages(void)
 		for (i = 0; i < MAX_NR_ZONES; i++) {
 			struct zone *zone = pgdat->node_zones + i;
 			long max = 0;
+			unsigned long managed_pages = zone->managed_pages;
 
 			/* Find valid and maximum lowmem_reserve in the zone */
 			for (j = i; j < MAX_NR_ZONES; j++) {
@@ -7511,8 +7577,8 @@ static void calculate_totalreserve_pages(void)
 			/* we treat the high watermark as reserved pages. */
 			max += high_wmark_pages(zone);
 
-			if (max > zone->managed_pages)
-				max = zone->managed_pages;
+			if (max > managed_pages)
+				max = managed_pages;
 
 			pgdat->totalreserve_pages += max;
 

@@ -41,6 +41,7 @@
 
 #include "blk.h"
 #include "blk-mq-sched.h"
+#include "blk-pm.h"
 #include "blk-wbt.h"
 
 static DEFINE_SPINLOCK(elv_list_lock);
@@ -99,6 +100,10 @@ static bool elevator_match(const struct elevator_type *e, const char *name)
 static struct elevator_type *elevator_find(const char *name, bool mq)
 {
 	struct elevator_type *e;
+
+	/* Forbid init from changing I/O scheduler from default */
+	if (!strncmp(current->comm, "init", sizeof("init")))
+		return NULL;
 
 	list_for_each_entry(e, &elv_list, list) {
 		if (elevator_match(e, name) && (mq == e->uses_mq))
@@ -557,34 +562,6 @@ void elv_bio_merged(struct request_queue *q, struct request *rq,
 		e->type->ops.sq.elevator_bio_merged_fn(q, rq, bio);
 }
 
-#ifdef CONFIG_PM
-static void blk_pm_requeue_request(struct request *rq)
-{
-	if (rq->q->dev && !(rq->rq_flags & RQF_PM) &&
-	    (rq->rq_flags & (RQF_PM_ADDED | RQF_FLUSH_SEQ))) {
-		rq->rq_flags &= ~RQF_PM_ADDED;
-		rq->q->nr_pending--;
-	}
-}
-
-static void blk_pm_add_request(struct request_queue *q, struct request *rq)
-{
-	if (q->dev && !(rq->rq_flags & RQF_PM)) {
-		rq->rq_flags |= RQF_PM_ADDED;
-		if (q->nr_pending++ == 0 &&
-		    (q->rpm_status == RPM_SUSPENDED ||
-		     q->rpm_status == RPM_SUSPENDING))
-			pm_request_resume(q->dev);
-	}
-}
-#else
-static inline void blk_pm_requeue_request(struct request *rq) {}
-static inline void blk_pm_add_request(struct request_queue *q,
-				      struct request *rq)
-{
-}
-#endif
-
 void elv_requeue_request(struct request_queue *q, struct request *rq)
 {
 	/*
@@ -877,8 +854,6 @@ void elv_unregister_queue(struct request_queue *q)
 		kobject_uevent(&e->kobj, KOBJ_REMOVE);
 		kobject_del(&e->kobj);
 		e->registered = 0;
-		/* Re-enable throttling in case elevator disabled it */
-		wbt_enable_default(q);
 	}
 }
 

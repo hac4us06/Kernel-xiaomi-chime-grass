@@ -1,5 +1,9 @@
+<<<<<<< HEAD
 
 ifeq ($(CONFIG_ARCH_BENGAL),y)
+=======
+ifneq ($(filter lime citrus, $(PRODUCT_DEVICE)),)
+>>>>>>> wip
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 
@@ -13,8 +17,20 @@ dtb-$(CONFIG_ARCH_BENGAL) += \
 		bengal-idp.dtb
 
 endif
+<<<<<<< HEAD
 
 else # CONFIG_ARCH_BENGAL
+=======
+arch/arm64/boot/dts/vendor/qcom/camera/config_%.dtsi:
+	$(Q) echo "#include <camera/$(PRODUCT_DEVICE)-camera-sensor-$(shell echo "$@" | sed 's/.*config_//')>" > $@
+
+arch/arm64/boot/dts/vendor/qcom/camera/config.dtsi:
+	$(Q) echo "#include <camera/$(PRODUCT_DEVICE)-camera.dtsi>" > $@
+
+always  := $(addprefix camera/, config_qrd.dtsi config_idp.dtsi config.dtsi)
+
+else # PRODUCT_DEVICE != lime,citrus
+>>>>>>> wip
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
         dtbo-$(CONFIG_ARCH_KONA) += \
@@ -250,8 +266,18 @@ sdm660-internal-codec-cdp.dtb \
         sdm660-usbc-audio-rcm.dtb
 endif
 
+<<<<<<< HEAD
 endif # CONFIG_ARCH_BENGAL
 
 always		:= $(dtb-y)
+=======
+endif # CONFIG_MACH_XIAOMI_LIME
+
+ifeq ($(always),)
+always		:= $(dtb-y)
+else
+always		+= $(dtb-y)
+endif
+>>>>>>> wip
 subdir-y	:= $(dts-dirs)
 clean-files    := *.dtb *.dtbo

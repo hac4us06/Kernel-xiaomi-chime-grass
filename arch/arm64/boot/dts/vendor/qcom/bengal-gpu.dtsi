@@ -107,7 +107,11 @@
 		qcom,chipid = <0x06010000>;
 
 		qcom,initial-pwrlevel = <6>;
+<<<<<<< HEAD
 		qcom,idle-timeout = <58>;
+=======
+		qcom,idle-timeout = <80>;
+>>>>>>> wip
 
 		qcom,ubwc-mode = <1>;
 		qcom,min-access-length = <64>;

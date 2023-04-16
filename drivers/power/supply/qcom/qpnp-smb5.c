@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <linux/debugfs.h>
@@ -227,7 +228,12 @@ struct smb5 {
 	struct smb_dt_props	dt;
 };
 
+<<<<<<< HEAD
 static int __debug_mask = 0xff;
+=======
+/* All flags turned on */
+static int __debug_mask = 0;
+>>>>>>> wip
 
 static ssize_t pd_disabled_show(struct device *dev, struct device_attribute
 				*attr, char *buf)

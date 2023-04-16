@@ -120,10 +120,13 @@ struct psi_trigger {
 	 * events to one per window
 	 */
 	u64 last_event_time;
+<<<<<<< HEAD
 
 	/* Refcounting to prevent premature destruction */
 	struct kref refcount;
 
+=======
+>>>>>>> wip
 };
 
 struct psi_group {

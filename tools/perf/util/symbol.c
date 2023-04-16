@@ -23,7 +23,7 @@
 #include "namespaces.h"
 #include "header.h"
 #include "path.h"
-#include "sane_ctype.h"
+#include <linux/ctype.h>
 
 #include <elf.h>
 #include <limits.h>
@@ -217,7 +217,7 @@ void symbols__fixup_end(struct rb_root *symbols)
 		prev = curr;
 		curr = rb_entry(nd, struct symbol, rb_node);
 
-		if (prev->end == prev->start && prev->end != curr->start)
+		if (prev->end == prev->start || prev->end != curr->start)
 			arch__symbols__fixup_end(prev, curr);
 	}
 

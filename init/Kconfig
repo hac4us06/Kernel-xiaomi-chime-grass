@@ -26,6 +26,10 @@ config CLANG_VERSION
 	int
 	default $(shell,$(srctree)/scripts/clang-version.sh $(CC))
 
+config LLD_VERSION
+	int
+	default $(shell,$(srctree)/scripts/lld-version.sh $(LD))
+
 config CC_HAS_ASM_GOTO
 	def_bool $(success,$(srctree)/scripts/gcc-goto.sh $(CC))
 
@@ -72,8 +76,7 @@ config INIT_ENV_ARG_LIMIT
 
 config COMPILE_TEST
 	bool "Compile also drivers which will not load"
-	depends on !UML
-	default n
+	depends on HAS_IOMEM
 	help
 	  Some drivers can be compiled on a different platform than they are
 	  intended to be run on. Despite they cannot be loaded there (or even
@@ -143,13 +146,16 @@ config HAVE_KERNEL_LZO
 config HAVE_KERNEL_LZ4
 	bool
 
+config HAVE_KERNEL_ZSTD
+        bool
+
 config HAVE_KERNEL_UNCOMPRESSED
 	bool
 
 choice
 	prompt "Kernel compression mode"
 	default KERNEL_GZIP
-	depends on HAVE_KERNEL_GZIP || HAVE_KERNEL_BZIP2 || HAVE_KERNEL_LZMA || HAVE_KERNEL_XZ || HAVE_KERNEL_LZO || HAVE_KERNEL_LZ4 || HAVE_KERNEL_UNCOMPRESSED
+	depends on HAVE_KERNEL_GZIP || HAVE_KERNEL_BZIP2 || HAVE_KERNEL_LZMA || HAVE_KERNEL_XZ || HAVE_KERNEL_LZO || HAVE_KERNEL_LZ4 || HAVE_KERNEL_ZSTD || HAVE_KERNEL_UNCOMPRESSED
 	help
 	  The linux kernel is a kind of self-extracting executable.
 	  Several compression algorithms are available, which differ
@@ -227,6 +233,16 @@ config KERNEL_LZ4
 	  Its compression ratio is worse than LZO. The size of the kernel
 	  is about 8% bigger than LZO. But the decompression speed is
 	  faster than LZO.
+
+config KERNEL_ZSTD
+        bool "ZSTD"
+        depends on HAVE_KERNEL_ZSTD
+        help
+          ZSTD is a compression algorithm targeting intermediate compression
+          with fast decompression speed. It will compress better than GZIP and
+          decompress around the same speed as LZO, but slower than LZ4. You
+          will need at least 192 KB RAM or more for booting. The zstd command
+          line tool is required for compression.
 
 config KERNEL_UNCOMPRESSED
 	bool "None"
@@ -1230,6 +1246,24 @@ config SCHED_TUNE
 
 	  If unsure, say N.
 
+config STUNE_ASSIST
+	bool "SchedTune configuration helper"
+	depends on SCHED_TUNE
+	depends on ANDROID
+	help
+	  This option enables in-kernel overrides for SchedTune values.
+
+	  If unsure, say N.
+
+config CPUSETS_ASSIST
+	bool "Cpuset configuration helper"
+	depends on CPUSETS
+	depends on ANDROID
+	help
+	  This option enables in-kernel overrides for cpuset values.
+
+	  If unsure, say N.
+
 config SYSFS_DEPRECATED
 	bool "Enable deprecated sysfs features to support old userspace tools"
 	depends on SYSFS
@@ -1322,6 +1356,12 @@ config CC_OPTIMIZE_FOR_SIZE
 
 endchoice
 
+config LTO_GCC
+	bool "Enable Link Time Optimization for GCC"
+
+config GCC_GRAPHITE
+        bool "Enable GCC Polyhedral Loop Optimization (Graphite)"
+
 config HAVE_LD_DEAD_CODE_DATA_ELIMINATION
 	bool
 	help
@@ -1336,9 +1376,6 @@ config LD_DEAD_CODE_DATA_ELIMINATION
 	bool "Dead code and data elimination (EXPERIMENTAL)"
 	depends on HAVE_LD_DEAD_CODE_DATA_ELIMINATION
 	depends on EXPERT
-	depends on !(FUNCTION_TRACER && CC_IS_GCC && GCC_VERSION < 40800)
-	depends on $(cc-option,-ffunction-sections -fdata-sections)
-	depends on $(ld-option,--gc-sections)
 	help
 	  Enable this if you want to do dead code and data elimination with
 	  the linker by compiling with -ffunction-sections -fdata-sections,
@@ -1694,6 +1731,16 @@ config BPF_JIT_ALWAYS_ON
 	help
 	  Enables BPF JIT and removes BPF interpreter to avoid
 	  speculative execution of BPF instructions by the interpreter
+
+config BPF_UNPRIV_DEFAULT_OFF
+	bool "Disable unprivileged BPF by default"
+	depends on BPF_SYSCALL
+	help
+	  Disables unprivileged BPF by default by setting the corresponding
+	  /proc/sys/kernel/unprivileged_bpf_disabled knob to 2. An admin can
+	  still reenable it by setting it to 0 later on, or permanently
+	  disable it by setting it to 1 (from which no other transition to
+	  0 is possible anymore).
 
 config USERFAULTFD
 	bool "Enable userfaultfd() system call"
@@ -2266,4 +2313,4 @@ config ARCH_HAS_SYNC_CORE_BEFORE_USERMODE
 config ARCH_HAS_SYSCALL_WRAPPER
 	def_bool n
 
-source "init/Kconfig.gki"
+#source "init/Kconfig.gki"

@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 4
 PATCHLEVEL = 19
+<<<<<<< HEAD
 SUBLEVEL = 157
+=======
+SUBLEVEL = 246
+>>>>>>> wip
 EXTRAVERSION =
 NAME = "People's Front"
 
@@ -365,10 +369,16 @@ else
 HOSTCC	= gcc
 HOSTCXX	= g++
 endif
+<<<<<<< HEAD
 KBUILD_HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 \
 		-fomit-frame-pointer -std=gnu89 -pipe $(HOST_LFS_CFLAGS) \
 		$(HOSTCFLAGS)
 KBUILD_HOSTCXXFLAGS := -O2 $(HOST_LFS_CFLAGS) $(HOSTCXXFLAGS)
+=======
+KBUILD_HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 \
+		-fomit-frame-pointer -std=gnu89 -pipe $(HOST_LFS_CFLAGS)
+KBUILD_HOSTCXXFLAGS := -O3 $(HOST_LFS_CFLAGS) $(HOSTCXXFLAGS)
+>>>>>>> wip
 KBUILD_HOSTLDFLAGS  := $(HOST_LFS_LDFLAGS) $(HOSTLDFLAGS)
 KBUILD_HOSTLDLIBS   := $(HOST_LFS_LIBS) $(HOSTLDLIBS)
 
@@ -407,10 +417,13 @@ PYTHON2		= python2
 PYTHON3		= python3
 CHECK		= sparse
 
+<<<<<<< HEAD
 # Use the wrapper for the compiler.  This wrapper scans for new
 # warnings and causes the build to stop upon encountering them
 # CC		= $(PYTHON2) $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
 
+=======
+>>>>>>> wip
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void -Wno-unknown-attribute $(CF)
 NOSTDINC_FLAGS  =
@@ -440,11 +453,15 @@ LINUXINCLUDE    := \
 # KSU
 LINUXINCLUDE	+= -I$(srctree)/drivers/android/ksu/include
 KBUILD_AFLAGS   := -D__ASSEMBLY__
+<<<<<<< HEAD
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -pipe \
+=======
+KBUILD_CFLAGS   := -Wno-all -Wno-error -Wundef -Wstrict-prototypes -Wno-trigraphs -pipe \
+>>>>>>> wip
 		   -fno-strict-aliasing -fno-common -fshort-wchar \
 		   -Werror-implicit-function-declaration \
-		   -Wno-format-security \
-		   -std=gnu89
+		   -Werror=return-type -Wno-format-security \
+		   -std=gnu89 -fno-stack-protector
 KBUILD_CPPFLAGS := -D__KERNEL__
 
 # Tell compiler to tune the performance of the code for a specified
@@ -666,6 +683,27 @@ export LLVM_AR LLVM_NM
 LDFLAGS		+= --plugin-opt=O3
 endif
 
+ifdef CONFIG_LTO_GCC
+LTO_CFLAGS	:= -flto -flto=jobserver -fipa-pta -fno-fat-lto-objects \
+		   -fuse-linker-plugin -fwhole-program -flto-compression-level=3
+KBUILD_CFLAGS	+= $(LTO_CFLAGS) --param=max-inline-insns-auto=1000
+LTO_LDFLAGS	:= $(LTO_CFLAGS) -Wno-lto-type-mismatch -Wno-psabi \
+		   -Wno-stringop-overflow -Wno-stringop-overread -flinker-output=nolto-rel \
+                   -Wno-aggressive-loop-optimizations
+LDFINAL		:= $(CONFIG_SHELL) $(srctree)/scripts/gcc-ld $(LTO_LDFLAGS)
+AR		:= $(CROSS_COMPILE)gcc-ar
+NM		:= $(CROSS_COMPILE)gcc-nm
+DISABLE_LTO	:= -fno-lto
+export DISABLE_LTO LDFINAL
+else
+LDFINAL		:= $(LD)
+export LDFINAL
+endif
+
+ifdef CONFIG_GCC_GRAPHITE
+KBUILD_CFLAGS	+= -fgraphite-identity -floop-nest-optimize
+endif
+
 # The arch Makefile can set ARCH_{CPP,A,C}FLAGS to override the default
 # values of the respective KBUILD_* variables
 ARCH_CPPFLAGS :=
@@ -744,6 +782,36 @@ ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS   += -Os
 else
 KBUILD_CFLAGS   += -O3
+<<<<<<< HEAD
+=======
+endif
+
+# Tell compiler to tune the performance of the code for a specified
+# target processor
+ifeq ($(cc-name),gcc)
+KBUILD_CFLAGS += -mcpu=cortex-a73.cortex-a53+crypto -mtune=cortex-a73.cortex-a53
+KBUILD_AFLAGS += -mcpu=cortex-a73.cortex-a53+crypto -mtune=cortex-a73.cortex-a53
+else ifeq ($(cc-name),clang)
+KBUILD_CFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53
+KBUILD_AFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53
+endif
+
+ifeq ($(cc-name),clang)
+ifdef CONFIG_LLVM_POLLY
+KBUILD_CFLAGS	+= -mllvm -polly \
+                   -mllvm -polly-parallel -lgomp \
+                   -mllvm -polly-omp-backend=LLVM \
+                   -mllvm -polly-num-threads=0 \
+                   -mllvm -polly-scheduling=dynamic \
+                   -mllvm -polly-scheduling-chunksize=1 \
+		   -mllvm -polly-run-dce \
+		   -mllvm -polly-run-inliner \
+		   -mllvm -polly-ast-use-context \
+		   -mllvm -polly-detect-keep-going \
+		   -mllvm -polly-vectorizer=stripmine \
+		   -mllvm -polly-invariant-load-hoisting
+endif
+>>>>>>> wip
 endif
 
 # Tell gcc to never replace conditional load with a non-conditional one
@@ -860,8 +928,11 @@ KBUILD_CFLAGS   += $(call cc-option, -gsplit-dwarf, -g)
 else
 KBUILD_CFLAGS	+= -g
 endif
+ifneq ($(LLVM_IAS),1)
 KBUILD_AFLAGS	+= -Wa,-gdwarf-2
 endif
+endif
+
 ifdef CONFIG_DEBUG_INFO_DWARF4
 KBUILD_CFLAGS	+= $(call cc-option, -gdwarf-4,)
 endif
@@ -975,6 +1046,11 @@ KBUILD_CFLAGS	+= $(CC_FLAGS_SCS)
 export CC_FLAGS_SCS
 endif
 
+# Check for frame size exceeding threshold during prolog/epilog insertion.
+ifneq ($(CONFIG_FRAME_WARN),0)
+KBUILD_LDFLAGS	+= -plugin-opt=-warn-stack-size=$(CONFIG_FRAME_WARN)
+endif
+
 # arch Makefile may override CC so keep this after arch Makefile is included
 NOSTDINC_FLAGS += -nostdinc -isystem $(shell $(CC) -print-file-name=include)
 
@@ -1006,10 +1082,6 @@ KBUILD_CFLAGS	+= $(call cc-option,-fno-strict-overflow)
 # need to disable it here generally.
 KBUILD_CFLAGS	+= $(call cc-option,-fno-merge-all-constants)
 
-# for gcc -fno-merge-all-constants disables everything, but it is fine
-# to have actual conforming behavior enabled.
-KBUILD_CFLAGS	+= $(call cc-option,-fmerge-constants)
-
 # Make sure -fstack-check isn't enabled (like gentoo apparently did)
 KBUILD_CFLAGS  += $(call cc-option,-fno-stack-check,)
 
@@ -1030,12 +1102,6 @@ KBUILD_CFLAGS   += $(call cc-option,-Werror=designated-init)
 
 # change __FILE__ to the relative path from the srctree
 KBUILD_CFLAGS	+= $(call cc-option,-fmacro-prefix-map=$(srctree)/=)
-
-# ensure -fcf-protection is disabled when using retpoline as it is
-# incompatible with -mindirect-branch=thunk-extern
-ifdef CONFIG_RETPOLINE
-KBUILD_CFLAGS += $(call cc-option,-fcf-protection=none)
-endif
 
 # use the deterministic mode of AR if available
 KBUILD_ARFLAGS := $(call ar-option,D)
@@ -1138,6 +1204,7 @@ INITRD_COMPRESS-$(CONFIG_RD_LZMA)  := lzma
 INITRD_COMPRESS-$(CONFIG_RD_XZ)    := xz
 INITRD_COMPRESS-$(CONFIG_RD_LZO)   := lzo
 INITRD_COMPRESS-$(CONFIG_RD_LZ4)   := lz4
+INITRD_COMPRESS-$(CONFIG_RD_ZSTD)  := zstd
 # do not export INITRD_COMPRESS, since we didn't actually
 # choose a sane default compression above.
 # export INITRD_COMPRESS := $(INITRD_COMPRESS-y)
@@ -1155,7 +1222,7 @@ HOST_LIBELF_LIBS = $(shell pkg-config libelf --libs 2>/dev/null || echo -lelf)
 
 ifdef CONFIG_STACK_VALIDATION
   has_libelf := $(call try-run,\
-		echo "int main() {}" | $(HOSTCC) -xc -o /dev/null $(HOST_LIBELF_LIBS) -,1,0)
+		echo "int main() {}" | $(HOSTCC) $(KBUILD_HOSTLDFLAGS) -xc -o /dev/null $(HOST_LIBELF_LIBS) -,1,0)
   ifeq ($(has_libelf),1)
     objtool_target := tools/objtool FORCE
   else
@@ -1284,7 +1351,6 @@ PHONY += prepare archprepare prepare1 prepare2 prepare3
 # 1) Check that make has not been executed in the kernel src $(srctree)
 prepare3: include/config/kernel.release
 ifneq ($(KBUILD_SRC),)
-	@$(kecho) '  Using $(srctree) as source for kernel'
 	$(Q)if [ -f $(srctree)/.config -o -d $(srctree)/include/config ]; then \
 		echo >&2 "  $(srctree) is not clean, please run 'make mrproper'"; \
 		echo >&2 "  in the '$(srctree)' directory.";\
@@ -1356,7 +1422,7 @@ endef
 
 define filechk_version.h
 	(echo \#define LINUX_VERSION_CODE $(shell                         \
-	expr $(VERSION) \* 65536 + 0$(PATCHLEVEL) \* 256 + 0$(SUBLEVEL)); \
+	expr $(VERSION) \* 65536 + 0$(PATCHLEVEL) \* 256 + 255); \
 	echo '#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))';)
 endef
 

@@ -482,6 +482,37 @@ config STACKPROTECTOR_STRONG
 	  about 20% of all kernel functions, which increases the kernel code
 	  size by about 2%.
 
+choice
+	prompt "Kernel linker"
+	default LD_BFD if !LTO_CLANG
+	default LD_GOLD if LTO_CLANG
+	help
+	  This selects the linker that will be used to link the kernel and
+	  its composite objects.
+
+	  Note that using either ld.gold or lld is required for Clang LTO.
+	  ld.bfd will not work.
+
+config LD_BFD
+	bool "bfd"
+	depends on !LTO_CLANG
+	help
+	  Use the standard ld.bfd linker from binutils, which is usually the
+	  default. This linker does not work with Clang LTO.
+
+config LD_GOLD
+	bool "gold"
+	depends on LTO_CLANG
+	help
+	  Use the alternative ld.gold linker from binutils.
+
+config LD_LLD
+	bool "lld"
+	help
+	  Use the alternative lld linker from LLVM.
+
+endchoice
+
 config LTO
 	def_bool n
 
@@ -963,6 +994,16 @@ config STRICT_MODULE_RWX
 config ARCH_HAS_PHYS_TO_DMA
 	bool
 
+config ARCH_HAS_REFCOUNT_FULL
+	bool
+	select ARCH_HAS_REFCOUNT
+	help
+	  An architecture selects this when the optimized refcount_t
+	  implementation it provides covers all the cases that
+	  CONFIG_REFCOUNT_FULL covers as well, in which case it makes no
+	  sense to even offer CONFIG_REFCOUNT_FULL as a user selectable
+	  option.
+
 config ARCH_HAS_REFCOUNT
 	bool
 	help
@@ -976,7 +1017,7 @@ config ARCH_HAS_REFCOUNT
 	  against bugs in reference counts.
 
 config REFCOUNT_FULL
-	bool "Perform full reference count validation at the expense of speed"
+	bool "Perform full reference count validation at the expense of speed" if !ARCH_HAS_REFCOUNT_FULL
 	help
 	  Enabling this switches the refcounting infrastructure from a fast
 	  unchecked atomic_t implementation to a fully state checked
@@ -1010,6 +1051,9 @@ config PANIC_ON_REFCOUNT_ERROR
 	  has detected any type of error (e.g. potential use-after-free
 	  or potential memory-leaks) with an object associated with that
 	  reference counter.
+
+config ARCH_USE_MEMREMAP_PROT
+	bool
 
 # Select if the architecture has support for applying RELR relocations.
 config ARCH_HAS_RELR

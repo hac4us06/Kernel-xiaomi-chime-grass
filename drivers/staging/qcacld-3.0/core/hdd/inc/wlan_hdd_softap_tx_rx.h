@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+<<<<<<< HEAD
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+=======
+>>>>>>> wip
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -271,6 +274,7 @@ int hdd_softap_inspect_dhcp_packet(struct hdd_adapter *adapter,
  */
 void hdd_softap_check_wait_for_tx_eap_pkt(struct hdd_adapter *adapter,
 					  struct qdf_mac_addr *mac_addr);
+<<<<<<< HEAD
 
 #ifndef QCA_LL_LEGACY_TX_FLOW_CONTROL
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 19, 0))
@@ -319,4 +323,6 @@ static inline struct sk_buff *hdd_skb_orphan(struct hdd_adapter *adapter,
 }
 #endif
 #endif /* QCA_LL_LEGACY_TX_FLOW_CONTROL */
+=======
+>>>>>>> wip
 #endif /* end #if !defined(WLAN_HDD_SOFTAP_TX_RX_H) */

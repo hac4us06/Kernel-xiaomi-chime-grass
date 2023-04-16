@@ -820,7 +820,11 @@ int f2fs_truncate(struct inode *inode)
 		return -EIO;
 	}
 
+<<<<<<< HEAD
 	err = f2fs_dquot_initialize(inode);
+=======
+	err = dquot_initialize(inode);
+>>>>>>> wip
 	if (err)
 		return err;
 

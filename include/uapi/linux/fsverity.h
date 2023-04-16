@@ -83,6 +83,7 @@ struct fsverity_formatted_digest {
 	__u8 digest[];
 };
 
+<<<<<<< HEAD
 #define FS_VERITY_METADATA_TYPE_MERKLE_TREE	1
 #define FS_VERITY_METADATA_TYPE_DESCRIPTOR	2
 #define FS_VERITY_METADATA_TYPE_SIGNATURE	3
@@ -95,6 +96,8 @@ struct fsverity_read_metadata_arg {
 	__u64 __reserved;
 };
 
+=======
+>>>>>>> wip
 #define FS_IOC_ENABLE_VERITY	_IOW('f', 133, struct fsverity_enable_arg)
 #define FS_IOC_MEASURE_VERITY	_IOWR('f', 134, struct fsverity_digest)
 #define FS_IOC_READ_VERITY_METADATA \

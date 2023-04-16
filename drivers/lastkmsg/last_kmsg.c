@@ -115,6 +115,7 @@ static const struct file_operations ram_console_file_ops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+<<<<<<< HEAD
 
 static int __init ram_console_late_init(void)
 {
@@ -130,3 +131,5 @@ static int __init ram_console_late_init(void)
 }
 
 late_initcall(ram_console_late_init);
+=======
+>>>>>>> wip

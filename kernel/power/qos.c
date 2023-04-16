@@ -613,16 +613,9 @@ void pm_qos_add_request(struct pm_qos_request *req,
 			if (!desc)
 				return;
 
-			/*
-			 * If the IRQ is not started, the effective affinity
-			 * won't be set. So fallback to the default affinity.
-			 */
-			mask = irq_data_get_effective_affinity_mask(
-						&desc->irq_data);
-			if (cpumask_empty(mask))
-				mask = irq_data_get_affinity_mask(
-						&desc->irq_data);
+			mask = desc->irq_data.common->affinity;
 
+			/* Get the current affinity */
 			cpumask_copy(&req->cpus_affine, mask);
 			req->irq_notify.irq = req->irq;
 			req->irq_notify.notify = pm_qos_irq_notify;

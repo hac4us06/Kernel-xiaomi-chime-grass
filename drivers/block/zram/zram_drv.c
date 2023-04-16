@@ -919,7 +919,7 @@ static ssize_t read_block_state(struct file *file, char __user *buf,
 			zram_test_flag(zram, index, ZRAM_HUGE) ? 'h' : '.',
 			zram_test_flag(zram, index, ZRAM_IDLE) ? 'i' : '.');
 
-		if (count < copied) {
+		if (count <= copied) {
 			zram_slot_unlock(zram, index);
 			break;
 		}
@@ -1840,9 +1840,14 @@ static ssize_t disksize_store(struct device *dev,
 	struct zram *zram = dev_to_zram(dev);
 	int err;
 
+        #ifndef CONFIG_ZRAM_SIZE_OVERRIDE
 	disksize = memparse(buf, NULL);
 	if (!disksize)
 		return -EINVAL;
+        #else
+	disksize = (u64)SZ_1G * CONFIG_ZRAM_SIZE_OVERRIDE;
+	pr_info("Overriding zram size to %li", disksize);
+        #endif
 
 	down_write(&zram->init_lock);
 	if (init_done(zram)) {

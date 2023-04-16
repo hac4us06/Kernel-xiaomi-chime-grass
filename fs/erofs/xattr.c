@@ -469,8 +469,13 @@ int erofs_getxattr(struct inode *inode, int index,
 }
 
 static int erofs_xattr_generic_get(const struct xattr_handler *handler,
+<<<<<<< HEAD:fs/erofs/xattr.c
 				   struct dentry *unused, struct inode *inode,
 				   const char *name, void *buffer, size_t size)
+=======
+		struct dentry *unused, struct inode *inode,
+		const char *name, void *buffer, size_t size, int unused2)
+>>>>>>> wip:drivers/staging/erofs/xattr.c
 {
 	struct erofs_sb_info *const sbi = EROFS_I_SB(inode);
 

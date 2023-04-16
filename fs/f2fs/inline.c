@@ -228,7 +228,11 @@ int f2fs_convert_inline_inode(struct inode *inode)
 			f2fs_hw_is_readonly(sbi) || f2fs_readonly(sbi->sb))
 		return 0;
 
+<<<<<<< HEAD
 	err = f2fs_dquot_initialize(inode);
+=======
+	err = dquot_initialize(inode);
+>>>>>>> wip
 	if (err)
 		return err;
 

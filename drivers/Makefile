@@ -158,7 +158,6 @@ obj-$(CONFIG_MAILBOX)		+= mailbox/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
 obj-$(CONFIG_REMOTEPROC)	+= remoteproc/
 obj-$(CONFIG_RPMSG)		+= rpmsg/
-obj-$(CONFIG_SOUNDWIRE)		+= soundwire/
 
 obj-$(CONFIG_ENERGY_MODEL)	+= energy_model/
 
@@ -188,7 +187,11 @@ obj-$(CONFIG_FSI)		+= fsi/
 obj-$(CONFIG_TEE)		+= tee/
 obj-$(CONFIG_MULTIPLEXER)	+= mux/
 obj-$(CONFIG_ESOC)              += esoc/
+<<<<<<< HEAD
 obj-$(CONFIG_LAST_KMSG)         += lastkmsg/
+=======
+obj-y                           += lastkmsg/
+>>>>>>> wip
 obj-$(CONFIG_SWITCH)            += switch/
 obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
 obj-$(CONFIG_SIOX)		+= siox/

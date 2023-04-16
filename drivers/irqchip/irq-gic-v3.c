@@ -99,7 +99,7 @@ static inline void __iomem *gic_dist_base(struct irq_data *d)
 	return NULL;
 }
 
-static void gic_do_wait_for_rwp(void __iomem *base)
+static void gic_do_wait_for_rwp(void __iomem *base, u32 bit)
 {
 	u32 count = 1000000;	/* 1s! */
 
@@ -117,13 +117,13 @@ static void gic_do_wait_for_rwp(void __iomem *base)
 /* Wait for completion of a distributor change */
 static void gic_dist_wait_for_rwp(void)
 {
-	gic_do_wait_for_rwp(gic_data.dist_base);
+	gic_do_wait_for_rwp(gic_data.dist_base, GICD_CTLR_RWP);
 }
 
 /* Wait for completion of a redistributor change */
 static void gic_redist_wait_for_rwp(void)
 {
-	gic_do_wait_for_rwp(gic_data_rdist_rd_base());
+	gic_do_wait_for_rwp(gic_data_rdist_rd_base(), GICR_CTLR_RWP);
 }
 
 #ifdef CONFIG_ARM64
@@ -307,6 +307,7 @@ static int gic_set_type(struct irq_data *d, unsigned int type)
 	unsigned int irq = gic_irq(d);
 	void (*rwp_wait)(void);
 	void __iomem *base;
+	int ret;
 
 	/* Interrupt configuration for SGIs can't be changed */
 	if (irq < 16)
@@ -325,7 +326,15 @@ static int gic_set_type(struct irq_data *d, unsigned int type)
 		rwp_wait = gic_dist_wait_for_rwp;
 	}
 
-	return gic_configure_irq(irq, type, base, rwp_wait);
+
+	ret = gic_configure_irq(irq, type, base + GICD_ICFGR, rwp_wait);
+	if (ret && irq < 32) {
+		/* Misconfigured PPIs are usually not fatal */
+		pr_warn("GIC: PPI%d is secure or misconfigured\n", irq - 16);
+		ret = 0;
+	}
+
+	return ret;
 }
 
 static int gic_irq_set_vcpu_affinity(struct irq_data *d, void *vcpu)
@@ -439,52 +448,47 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 {
 	u32 irqnr;
 
-	do {
-		irqnr = gic_read_iar();
+	irqnr = gic_read_iar();
 
-		if (likely(irqnr > 15 && irqnr < 1020) || irqnr >= 8192) {
-			int err;
+	if (likely(irqnr > 15 && irqnr < 1020) || irqnr >= 8192) {
+		int err;
 
-			uncached_logk(LOGK_IRQ, (void *)(uintptr_t)irqnr);
-			if (static_branch_likely(&supports_deactivate_key))
-				gic_write_eoir(irqnr);
-			else
-				isb();
-
-			err = handle_domain_irq(gic_data.domain, irqnr, regs);
-			if (err) {
-				WARN_ONCE(true, "Unexpected interrupt received!\n");
-				log_abnormal_wakeup_reason(
-						"unexpected HW IRQ %u", irqnr);
-				if (static_branch_likely(&supports_deactivate_key)) {
-					if (irqnr < 8192)
-						gic_write_dir(irqnr);
-				} else {
-					gic_write_eoir(irqnr);
-				}
-			}
-			continue;
-		}
-		if (irqnr < 16) {
-			uncached_logk(LOGK_IRQ, (void *)(uintptr_t)irqnr);
+		if (static_branch_likely(&supports_deactivate_key))
 			gic_write_eoir(irqnr);
-			if (static_branch_likely(&supports_deactivate_key))
-				gic_write_dir(irqnr);
-#ifdef CONFIG_SMP
-			/*
-			 * Unlike GICv2, we don't need an smp_rmb() here.
-			 * The control dependency from gic_read_iar to
-			 * the ISB in gic_write_eoir is enough to ensure
-			 * that any shared data read by handle_IPI will
-			 * be read after the ACK.
-			 */
-			handle_IPI(irqnr, regs);
-#else
-			WARN_ONCE(true, "Unexpected SGI received!\n");
-#endif
-			continue;
+		else
+			isb();
+
+		err = handle_domain_irq(gic_data.domain, irqnr, regs);
+		if (err) {
+			WARN_ONCE(true, "Unexpected interrupt received!\n");
+			if (static_branch_likely(&supports_deactivate_key)) {
+				if (irqnr < 8192)
+					gic_write_dir(irqnr);
+			} else {
+				gic_write_eoir(irqnr);
+			}
 		}
-	} while (irqnr != ICC_IAR1_EL1_SPURIOUS);
+
+		return;
+	}
+	if (irqnr < 16) {
+		gic_write_eoir(irqnr);
+		if (static_branch_likely(&supports_deactivate_key))
+			gic_write_dir(irqnr);
+			
+#ifdef CONFIG_SMP
+		/*
+		 * Unlike GICv2, we don't need an smp_rmb() here.
+		 * The control dependency from gic_read_iar to
+		 * the ISB in gic_write_eoir is enough to ensure
+		 * that any shared data read by handle_IPI will
+		 * be read after the ACK.
+		 */
+		handle_IPI(irqnr, regs);
+#else
+		WARN_ONCE(true, "Unexpected SGI received!\n");
+#endif
+	}
 }
 
 static void __init gic_dist_init(void)
@@ -744,7 +748,9 @@ early_param("irqchip.gicv3_nolpi", gicv3_nolpi_cfg);
 
 static int gic_dist_supports_lpis(void)
 {
-	return !!(readl_relaxed(gic_data.dist_base + GICD_TYPER) & GICD_TYPER_LPIS) && !gicv3_nolpi;
+	return (IS_ENABLED(CONFIG_ARM_GIC_V3_ITS) &&
+		!!(readl_relaxed(gic_data.dist_base + GICD_TYPER) & GICD_TYPER_LPIS) &&
+		!gicv3_nolpi);
 }
 
 static void gic_cpu_init(void)
@@ -764,11 +770,6 @@ static void gic_cpu_init(void)
 
 	gic_cpu_config(rbase, gic_redist_wait_for_rwp);
 
-	/* Give LPIs a spin */
-	if (IS_ENABLED(CONFIG_ARM_GIC_V3_ITS) && gic_dist_supports_lpis() &&
-					!IS_ENABLED(CONFIG_ARM_GIC_V3_ACL))
-		its_cpu_init();
-
 	/* initialise system registers */
 	gic_cpu_sys_reg_init();
 }
@@ -781,6 +782,10 @@ static void gic_cpu_init(void)
 static int gic_starting_cpu(unsigned int cpu)
 {
 	gic_cpu_init();
+
+	if (gic_dist_supports_lpis())
+		its_cpu_init();
+
 	return 0;
 }
 
@@ -826,7 +831,6 @@ static void gic_send_sgi(u64 cluster_id, u16 tlist, unsigned int irq)
 	       MPIDR_TO_SGI_RS(cluster_id)		|
 	       tlist << ICC_SGI1R_TARGET_LIST_SHIFT);
 
-	pr_devel("CPU%d: ICC_SGI1R_EL1 %llx\n", smp_processor_id(), val);
 	gic_write_sgi1r(val);
 }
 
@@ -1222,14 +1226,15 @@ static int __init gic_init_bases(void __iomem *dist_base,
 
 	gic_update_vlpi_properties();
 
-	if (IS_ENABLED(CONFIG_ARM_GIC_V3_ITS) && gic_dist_supports_lpis() &&
-			!IS_ENABLED(CONFIG_ARM_GIC_V3_ACL))
-		its_init(handle, &gic_data.rdists, gic_data.domain);
-
 	gic_smp_init();
 	gic_dist_init();
 	gic_cpu_init();
 	gic_cpu_pm_init();
+
+	if (gic_dist_supports_lpis()) {
+		its_init(handle, &gic_data.rdists, gic_data.domain);
+		its_cpu_init();
+	}
 
 	return 0;
 
@@ -1279,8 +1284,8 @@ static void __init gic_populate_ppi_partitions(struct device_node *gic_node)
 
 		part->partition_id = of_node_to_fwnode(child_part);
 
-		pr_info("GIC: PPI partition %s[%d] { ",
-			child_part->name, part_idx);
+		pr_info("GIC: PPI partition %pOFn[%d] { ",
+			child_part, part_idx);
 
 		n = of_property_count_elems_of_size(child_part, "affinity",
 						    sizeof(u32));
@@ -1714,7 +1719,7 @@ gic_acpi_init(struct acpi_subtable_header *header, const unsigned long end)
 	if (err)
 		goto out_redist_unmap;
 
-	domain_handle = irq_domain_alloc_fwnode(acpi_data.dist_base);
+	domain_handle = irq_domain_alloc_fwnode(&dist->base_address);
 	if (!domain_handle) {
 		err = -ENOMEM;
 		goto out_redist_unmap;
