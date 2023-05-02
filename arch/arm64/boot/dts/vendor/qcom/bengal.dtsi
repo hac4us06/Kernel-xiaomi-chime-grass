@@ -273,7 +273,7 @@
 				compatible = "android,fstab";
 				vendor {
 					compatible = "android,vendor";
-					dev = "/dev/block/platform/soc/4804000.ufshc/by-name/vendor";
+					dev = "/dev/block/platform/soc/4744000.sdhci/by-name/vendor";
 					type = "ext4";
 					mnt_flags = "ro,barrier=1,discard";
 					fsmgr_flags = "wait";
@@ -413,7 +413,7 @@
 		};
 
 		disp_rdump_memory: disp_rdump_region@5c000000 {
-			reg = <0x0 0x5d000000 0x0 0x00f00000>;
+			reg = <0x0 0x5c000000 0x0 0x00f00000>;
 			label = "disp_rdump_region";
 		};
 
@@ -449,7 +449,7 @@
 	};
 
 	chosen {
-		bootargs = "rcupdate.rcu_expedited=1 rcupdate.rcu_normal_after_boot=1 rcu_nocbs=0-3 kpti=off nosoftlockup mce=ignore_ce noirqdebug quiet";
+		bootargs = "rcupdate.rcu_expedited=1 rcu_nocbs=0-7 kpti=off,memory";
 	};
 
 	soc: soc { };
@@ -1032,6 +1032,7 @@
 		qcom,bark-time = <11000>;
 		qcom,pet-time = <9360>;
 		qcom,ipi-ping;
+		qcom,wakeup-enable;
 	};
 
 	rpm_bus: qcom,rpm-smd {
@@ -1718,27 +1719,6 @@
 		qcom,no-accumulative-counter;
 		qcom,max-lut-entries = <12>;
 		#freq-domain-cells = <2>;
-
-		qcom,cpufreq-table-0 =
-			< 300000>,
-			< 614400>,
-			< 864000>,
-			<1017600>,
-			<1305600>,
-			<1420800>,
-			<1612800>,
-			<1804800>;
-
-		qcom,cpufreq-table-1 =
-			< 300000>,
-			< 652800>,
-			< 902400>,
-			<1056000>,
-			<1401600>,
-			<1536000>,
-			<1612800>,
-			<1804800>,
-			<2016000>;
 	};
 
 	tcsr_mutex_block: syscon@00340000 {
@@ -2996,5 +2976,5 @@
 };
 
 #include "bengal-thermal.dtsi"
-#include "camera/config.dtsi"
+#include "camera/bengal-camera.dtsi"
 #include "msm-rdbg.dtsi"
