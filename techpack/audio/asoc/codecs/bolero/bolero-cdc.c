@@ -18,7 +18,6 @@
 #include "bolero-cdc.h"
 #include "internal.h"
 #include "bolero-clk-rsc.h"
-#include "asoc/bolero-slave-internal.h"
 
 #define DRV_NAME "bolero_codec"
 
@@ -203,31 +202,31 @@ static int bolero_cdc_update_wcd_event(void *handle, u16 event, u32 data)
 	}
 
 	switch (event) {
-	case SLV_BOLERO_EVT_RX_MUTE:
+	case WCD_BOLERO_EVT_RX_MUTE:
 		if (priv->macro_params[RX_MACRO].event_handler)
 			priv->macro_params[RX_MACRO].event_handler(
 				priv->component,
 				BOLERO_MACRO_EVT_RX_MUTE, data);
 		break;
-	case SLV_BOLERO_EVT_IMPED_TRUE:
+	case WCD_BOLERO_EVT_IMPED_TRUE:
 		if (priv->macro_params[RX_MACRO].event_handler)
 			priv->macro_params[RX_MACRO].event_handler(
 				priv->component,
 				BOLERO_MACRO_EVT_IMPED_TRUE, data);
 		break;
-	case SLV_BOLERO_EVT_IMPED_FALSE:
+	case WCD_BOLERO_EVT_IMPED_FALSE:
 		if (priv->macro_params[RX_MACRO].event_handler)
 			priv->macro_params[RX_MACRO].event_handler(
 				priv->component,
 				BOLERO_MACRO_EVT_IMPED_FALSE, data);
 		break;
-	case SLV_BOLERO_EVT_RX_COMPANDER_SOFT_RST:
+	case WCD_BOLERO_EVT_RX_COMPANDER_SOFT_RST:
 		if (priv->macro_params[RX_MACRO].event_handler)
 			priv->macro_params[RX_MACRO].event_handler(
 				priv->component,
 				BOLERO_MACRO_EVT_RX_COMPANDER_SOFT_RST, data);
 		break;
-	case SLV_BOLERO_EVT_BCS_CLK_OFF:
+	case WCD_BOLERO_EVT_BCS_CLK_OFF:
 		if (priv->macro_params[TX_MACRO].event_handler)
 			priv->macro_params[TX_MACRO].event_handler(
 				priv->component,
@@ -327,7 +326,7 @@ void bolero_clear_amic_tx_hold(struct device *dev, u16 adc_n)
 		dev_err(dev, "%s: priv is null\n", __func__);
 		return;
 	}
-	event = BOLERO_SLV_EVT_TX_CH_HOLD_CLEAR;
+	event = BOLERO_WCD_EVT_TX_CH_HOLD_CLEAR;
 	if (adc_n == BOLERO_ADC0)
 		amic = 0x1;
 	else if (adc_n == BOLERO_ADC1)
@@ -928,7 +927,7 @@ static void bolero_ssr_disable(struct device *dev, void *data)
 		return;
 	}
 
-	bolero_cdc_notifier_call(priv, BOLERO_SLV_EVT_PA_OFF_PRE_SSR);
+	bolero_cdc_notifier_call(priv, BOLERO_WCD_EVT_PA_OFF_PRE_SSR);
 	regcache_cache_only(priv->regmap, true);
 
 	mutex_lock(&priv->clk_lock);
@@ -944,7 +943,7 @@ static void bolero_ssr_disable(struct device *dev, void *data)
 			priv->component,
 			BOLERO_MACRO_EVT_SSR_DOWN, 0x0);
 	}
-	bolero_cdc_notifier_call(priv, BOLERO_SLV_EVT_SSR_DOWN);
+	bolero_cdc_notifier_call(priv, BOLERO_WCD_EVT_SSR_DOWN);
 }
 
 static struct snd_info_entry_ops bolero_info_ops = {

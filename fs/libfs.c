@@ -870,7 +870,7 @@ ssize_t simple_attr_write(struct file *file, const char __user *buf,
 			  size_t len, loff_t *ppos)
 {
 	struct simple_attr *attr;
-	unsigned long long val;
+	u64 val;
 	size_t size;
 	ssize_t ret;
 
@@ -888,9 +888,7 @@ ssize_t simple_attr_write(struct file *file, const char __user *buf,
 		goto out;
 
 	attr->set_buf[size] = '\0';
-	ret = kstrtoull(attr->set_buf, 0, &val);
-	if (ret)
-		goto out;
+	val = simple_strtoll(attr->set_buf, NULL, 0);
 	ret = attr->set(attr->data, val);
 	if (ret == 0)
 		ret = len; /* on success, claim we got the whole input */
@@ -1370,7 +1368,7 @@ static const struct dentry_operations generic_encrypted_ci_dentry_ops = {
 void generic_set_encrypted_ci_d_ops(struct inode *dir, struct dentry *dentry)
 {
 #ifdef CONFIG_FS_ENCRYPTION
-	if (dentry->d_flags & DCACHE_ENCRYPTED_NAME) {
+	if (dentry->d_flags & DCACHE_NOKEY_NAME) {
 #ifdef CONFIG_UNICODE
 		if (dir->i_sb->s_encoding) {
 			d_set_d_op(dentry, &generic_encrypted_ci_dentry_ops);

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ *  linux/fs/ntfs3/dir.c
  *
- * Copyright (C) 2019-2021 Paragon Software GmbH, All rights reserved.
+ * Copyright (C) 2019-2020 Paragon Software GmbH, All rights reserved.
  *
- *  Directory handling functions for NTFS-based filesystems.
+ *  directory handling functions for ntfs-based filesystems
  *
  */
-
 #include <linux/blkdev.h>
 #include <linux/buffer_head.h>
 #include <linux/fs.h>
@@ -17,38 +17,30 @@
 #include "ntfs.h"
 #include "ntfs_fs.h"
 
-/* Convert little endian UTF-16 to NLS string. */
-int ntfs_utf16_to_nls(struct ntfs_sb_info *sbi, const struct le_str *uni,
-		      u8 *buf, int buf_len)
+/*
+ * Convert little endian Unicode 16 to UTF-8.
+ */
+int uni_to_x8(ntfs_sb_info *sbi, const struct le_str *uni, u8 *buf, int buf_len)
 {
-	int ret, uni_len, warn;
 	const __le16 *ip;
 	u8 *op;
-	struct nls_table *nls = sbi->options.nls;
+	struct nls_table *nls;
+	int uni_len = uni->len;
 
 	static_assert(sizeof(wchar_t) == sizeof(__le16));
 
-	if (!nls) {
-		/* UTF-16 -> UTF-8 */
-		ret = utf16s_to_utf8s((wchar_t *)uni->name, uni->len,
-				      UTF16_LITTLE_ENDIAN, buf, buf_len);
-		buf[ret] = '\0';
-		return ret;
-	}
-
 	ip = uni->name;
 	op = buf;
-	uni_len = uni->len;
-	warn = 0;
+	nls = sbi->nls;
 
 	while (uni_len--) {
 		u16 ec;
 		int charlen;
-		char dump[5];
 
 		if (buf_len < NLS_MAX_CHARSET_SIZE) {
-			ntfs_warn(sbi->sb,
-				  "filename was truncated while converting.");
+			ntfs_warning(
+				sbi->sb,
+				"filename was truncated while converting.");
 			break;
 		}
 
@@ -58,174 +50,101 @@ int ntfs_utf16_to_nls(struct ntfs_sb_info *sbi, const struct le_str *uni,
 		if (charlen > 0) {
 			op += charlen;
 			buf_len -= charlen;
-			continue;
+		} else {
+			*op++ = ':';
+			op = hex_byte_pack(op, ec >> 8);
+			op = hex_byte_pack(op, ec);
+			buf_len -= 5;
 		}
-
-		*op++ = '_';
-		buf_len -= 1;
-		if (warn)
-			continue;
-
-		warn = 1;
-		hex_byte_pack(&dump[0], ec >> 8);
-		hex_byte_pack(&dump[2], ec);
-		dump[4] = 0;
-
-		ntfs_err(sbi->sb, "failed to convert \"%s\" to %s", dump,
-			 nls->charset);
 	}
 
-	*op = '\0';
+	*op = 0;
 	return op - buf;
 }
 
-// clang-format off
-#define PLANE_SIZE	0x00010000
-
-#define SURROGATE_PAIR	0x0000d800
-#define SURROGATE_LOW	0x00000400
-#define SURROGATE_BITS	0x000003ff
-// clang-format on
-
-/*
- * put_utf16 - Modified version of put_utf16 from fs/nls/nls_base.c
- *
- * Function is sparse warnings free.
- */
-static inline void put_utf16(wchar_t *s, unsigned int c,
-			     enum utf16_endian endian)
+static inline u8 get_digit(u8 d)
 {
-	static_assert(sizeof(wchar_t) == sizeof(__le16));
-	static_assert(sizeof(wchar_t) == sizeof(__be16));
+	u8 x = (d)&0xf;
 
-	switch (endian) {
-	default:
-		*s = (wchar_t)c;
-		break;
-	case UTF16_LITTLE_ENDIAN:
-		*(__le16 *)s = __cpu_to_le16(c);
-		break;
-	case UTF16_BIG_ENDIAN:
-		*(__be16 *)s = __cpu_to_be16(c);
-		break;
-	}
+	return x <= 9 ? ('0' + x) : ('A' + x - 10);
 }
 
-/*
- * _utf8s_to_utf16s
- *
- * Modified version of 'utf8s_to_utf16s' allows to
- * detect -ENAMETOOLONG without writing out of expected maximum.
- */
-static int _utf8s_to_utf16s(const u8 *s, int inlen, enum utf16_endian endian,
-			    wchar_t *pwcs, int maxout)
+/* Convert input string to unicode */
+int x8_to_uni(ntfs_sb_info *sbi, const u8 *name, u32 name_len,
+	      struct cpu_str *uni, u32 max_ulen, enum utf16_endian endian)
 {
-	u16 *op;
-	int size;
-	unicode_t u;
-
-	op = pwcs;
-	while (inlen > 0 && *s) {
-		if (*s & 0x80) {
-			size = utf8_to_utf32(s, inlen, &u);
-			if (size < 0)
-				return -EINVAL;
-			s += size;
-			inlen -= size;
-
-			if (u >= PLANE_SIZE) {
-				if (maxout < 2)
-					return -ENAMETOOLONG;
-
-				u -= PLANE_SIZE;
-				put_utf16(op++,
-					  SURROGATE_PAIR |
-						  ((u >> 10) & SURROGATE_BITS),
-					  endian);
-				put_utf16(op++,
-					  SURROGATE_PAIR | SURROGATE_LOW |
-						  (u & SURROGATE_BITS),
-					  endian);
-				maxout -= 2;
-			} else {
-				if (maxout < 1)
-					return -ENAMETOOLONG;
-
-				put_utf16(op++, u, endian);
-				maxout--;
-			}
-		} else {
-			if (maxout < 1)
-				return -ENAMETOOLONG;
-
-			put_utf16(op++, *s++, endian);
-			inlen--;
-			maxout--;
-		}
-	}
-	return op - pwcs;
-}
-
-/*
- * ntfs_nls_to_utf16 - Convert input string to UTF-16.
- * @name:	Input name.
- * @name_len:	Input name length.
- * @uni:	Destination memory.
- * @max_ulen:	Destination memory.
- * @endian:	Endian of target UTF-16 string.
- *
- * This function is called:
- * - to create NTFS name
- * - to create symlink
- *
- * Return: UTF-16 string length or error (if negative).
- */
-int ntfs_nls_to_utf16(struct ntfs_sb_info *sbi, const u8 *name, u32 name_len,
-		      struct cpu_str *uni, u32 max_ulen,
-		      enum utf16_endian endian)
-{
-	int ret, slen;
-	const u8 *end;
-	struct nls_table *nls = sbi->options.nls;
+	int i, ret;
+	int clen;
+	const u8 *s, *end;
+	u32 tail;
 	u16 *uname = uni->name;
+	struct nls_table *nls;
 
 	static_assert(sizeof(wchar_t) == sizeof(u16));
 
-	if (!nls) {
-		/* utf8 -> utf16 */
-		ret = _utf8s_to_utf16s(name, name_len, endian, uname, max_ulen);
-		uni->len = ret;
-		return ret;
-	}
+	nls = sbi->nls;
+	s = name;
+	end = name + name_len;
 
-	for (ret = 0, end = name + name_len; name < end; ret++, name += slen) {
+	for (ret = 0; s < end; ret += 1, uname += 1, s += clen) {
 		if (ret >= max_ulen)
 			return -ENAMETOOLONG;
+		tail = end - s;
+		if (*s == ':') {
+			u8 uc[2];
 
-		slen = nls->char2uni(name, end - name, uname + ret);
-		if (!slen)
-			return -EINVAL;
-		if (slen < 0)
-			return slen;
+			if (tail < 5)
+				return -EINVAL;
+
+			if (hex2bin(uc, s + 1, 2) < 0)
+				return -EINVAL;
+
+			*uname = (uc[0] << 8) | uc[1];
+			clen = 5;
+			continue;
+		}
+
+		clen = nls->char2uni(s, tail, uname);
+		if (clen > 0)
+			continue;
+
+		ntfs_warning(
+			sbi->sb,
+			"%s -> unicode failed: '%.*s', pos %d, chars %x %x %x",
+			nls->charset, name_len, name, (int)(s - name), s[0],
+			tail > 1 ? s[1] : 0, tail > 2 ? s[2] : 0);
+
+		if (tail >= 3) {
+			uname[0] = '%';
+			uname[1] = get_digit(*s >> 4);
+			uname[2] = get_digit(*s >> 0);
+
+			uname += 2;
+			ret += 2; // +1 will be added if for ( .... )
+			clen = 1;
+			continue;
+		}
+
+		ntfs_error(
+			sbi->sb,
+			"input name \"%s\" is too big to fit into 255 unicode symbols",
+			name);
+		return -ENAMETOOLONG;
 	}
 
 #ifdef __BIG_ENDIAN
 	if (endian == UTF16_LITTLE_ENDIAN) {
-		int i = ret;
+		__le16 *uname = (__le16 *)uni->name;
 
-		while (i--) {
-			__cpu_to_le16s(uname);
-			uname++;
-		}
+		for (i = 0; i < ret; i++, uname++)
+			*uname = cpu_to_le16(*name);
 	}
 #else
 	if (endian == UTF16_BIG_ENDIAN) {
-		int i = ret;
+		__be16 *uname = (__be16 *)uni->name;
 
-		while (i--) {
-			__cpu_to_be16s(uname);
-			uname++;
-		}
+		for (i = 0; i < ret; i++, uname++)
+			*uname = cpu_to_be16(*name);
 	}
 #endif
 
@@ -233,23 +152,21 @@ int ntfs_nls_to_utf16(struct ntfs_sb_info *sbi, const u8 *name, u32 name_len,
 	return ret;
 }
 
-/*
- * dir_search_u - Helper function.
- */
+/* helper function */
 struct inode *dir_search_u(struct inode *dir, const struct cpu_str *uni,
 			   struct ntfs_fnd *fnd)
 {
 	int err = 0;
 	struct super_block *sb = dir->i_sb;
-	struct ntfs_sb_info *sbi = sb->s_fs_info;
-	struct ntfs_inode *ni = ntfs_i(dir);
-	struct NTFS_DE *e;
+	ntfs_sb_info *sbi = sb->s_fs_info;
+	ntfs_inode *ni = ntfs_i(dir);
+	NTFS_DE *e;
 	int diff;
 	struct inode *inode = NULL;
 	struct ntfs_fnd *fnd_a = NULL;
 
 	if (!fnd) {
-		fnd_a = fnd_get();
+		fnd_a = fnd_get(&ni->dir);
 		if (!fnd_a) {
 			err = -ENOMEM;
 			goto out;
@@ -278,16 +195,40 @@ out:
 	return err == -ENOENT ? NULL : err ? ERR_PTR(err) : inode;
 }
 
-static inline int ntfs_filldir(struct ntfs_sb_info *sbi, struct ntfs_inode *ni,
-			       const struct NTFS_DE *e, u8 *name,
+/* helper function */
+struct inode *dir_search(struct inode *dir, const struct qstr *name,
+			 struct ntfs_fnd *fnd)
+{
+	struct super_block *sb = dir->i_sb;
+	ntfs_sb_info *sbi = sb->s_fs_info;
+	int err;
+	struct inode *inode;
+	struct cpu_str *uni = __getname();
+	const u8 *n = name->name;
+
+	if (!uni)
+		return ERR_PTR(-ENOMEM);
+
+	err = x8_to_uni(sbi, n, name->len, uni, NTFS_NAME_LEN,
+			UTF16_HOST_ENDIAN);
+
+	inode = err < 0 ? ERR_PTR(err) : dir_search_u(dir, uni, fnd);
+
+	__putname(uni);
+
+	return inode;
+}
+
+static inline int ntfs_filldir(ntfs_sb_info *sbi, ntfs_inode *ni,
+			       const NTFS_DE *e, u8 *name,
 			       struct dir_context *ctx)
 {
-	const struct ATTR_FILE_NAME *fname;
+	const ATTR_FILE_NAME *fname;
 	unsigned long ino;
 	int name_len;
 	u32 dt_type;
 
-	fname = Add2Ptr(e, sizeof(struct NTFS_DE));
+	fname = Add2Ptr(e, sizeof(NTFS_DE));
 
 	if (fname->type == FILE_NAME_DOS)
 		return 0;
@@ -300,18 +241,18 @@ static inline int ntfs_filldir(struct ntfs_sb_info *sbi, struct ntfs_inode *ni,
 	if (ino == MFT_REC_ROOT)
 		return 0;
 
-	/* Skip meta files. Unless option to show metafiles is set. */
+	/* Skip meta files ( unless option to show metafiles is set ) */
 	if (!sbi->options.showmeta && ntfs_is_meta_file(sbi, ino))
 		return 0;
 
 	if (sbi->options.nohidden && (fname->dup.fa & FILE_ATTRIBUTE_HIDDEN))
 		return 0;
 
-	name_len = ntfs_utf16_to_nls(sbi, (struct le_str *)&fname->name_len,
-				     name, PATH_MAX);
+	name_len = uni_to_x8(sbi, (struct le_str *)&fname->name_len, name,
+			     PATH_MAX);
 	if (name_len <= 0) {
-		ntfs_warn(sbi->sb, "failed to convert name for inode %lx.",
-			  ino);
+		ntfs_warning(sbi->sb, "failed to convert name for inode %lx.",
+			     ino);
 		return 0;
 	}
 
@@ -321,72 +262,84 @@ static inline int ntfs_filldir(struct ntfs_sb_info *sbi, struct ntfs_inode *ni,
 }
 
 /*
- * ntfs_read_hdr - Helper function for ntfs_readdir().
+ * ntfs_read_hdr
+ *
+ * helper function 'ntfs_readdir'
  */
-static int ntfs_read_hdr(struct ntfs_sb_info *sbi, struct ntfs_inode *ni,
-			 const struct INDEX_HDR *hdr, u64 vbo, u64 pos,
-			 u8 *name, struct dir_context *ctx)
+static int ntfs_read_hdr(ntfs_sb_info *sbi, ntfs_inode *ni,
+			 const INDEX_HDR *hdr, u64 vbo, u64 pos, u8 *name,
+			 struct dir_context *ctx)
 {
 	int err;
-	const struct NTFS_DE *e;
+	const NTFS_DE *e;
 	u32 e_size;
 	u32 end = le32_to_cpu(hdr->used);
 	u32 off = le32_to_cpu(hdr->de_off);
 
-	for (;; off += e_size) {
-		if (off + sizeof(struct NTFS_DE) > end)
-			return -1;
+next:
+	if (off + sizeof(NTFS_DE) > end)
+		return -1;
 
-		e = Add2Ptr(hdr, off);
-		e_size = le16_to_cpu(e->size);
-		if (e_size < sizeof(struct NTFS_DE) || off + e_size > end)
-			return -1;
+	e = Add2Ptr(hdr, off);
+	e_size = le16_to_cpu(e->size);
+	if (e_size < sizeof(NTFS_DE) || off + e_size > end)
+		return -1;
 
-		if (de_is_last(e))
-			return 0;
+	if (de_is_last(e))
+		return 0;
 
-		/* Skip already enumerated. */
-		if (vbo + off < pos)
-			continue;
-
-		if (le16_to_cpu(e->key_size) < SIZEOF_ATTRIBUTE_FILENAME)
-			return -1;
-
-		ctx->pos = vbo + off;
-
-		/* Submit the name to the filldir callback. */
-		err = ntfs_filldir(sbi, ni, e, name, ctx);
-		if (err)
-			return err;
+	/* Skip already enumerated*/
+	if (vbo + off < pos) {
+		off += e_size;
+		goto next;
 	}
+
+	if (le16_to_cpu(e->key_size) < SIZEOF_ATTRIBUTE_FILENAME)
+		return -1;
+
+	ctx->pos = vbo + off;
+
+	/* Submit the name to the filldir callback. */
+	err = ntfs_filldir(sbi, ni, e, name, ctx);
+	if (err)
+		return err;
+
+	off += e_size;
+	goto next;
 }
 
 /*
- * ntfs_readdir - file_operations::iterate_shared
+ * file_operations::iterate_shared
  *
  * Use non sorted enumeration.
  * We have an example of broken volume where sorted enumeration
- * counts each name twice.
+ * counts each name twice
  */
 static int ntfs_readdir(struct file *file, struct dir_context *ctx)
 {
-	const struct INDEX_ROOT *root;
+	const INDEX_ROOT *root;
+	const INDEX_HDR *hdr;
 	u64 vbo;
 	size_t bit;
 	loff_t eod;
 	int err = 0;
 	struct inode *dir = file_inode(file);
-	struct ntfs_inode *ni = ntfs_i(dir);
+	ntfs_inode *ni = ntfs_i(dir);
 	struct super_block *sb = dir->i_sb;
-	struct ntfs_sb_info *sbi = sb->s_fs_info;
-	loff_t i_size = i_size_read(dir);
+	ntfs_sb_info *sbi = sb->s_fs_info;
+	loff_t i_size = dir->i_size;
 	u32 pos = ctx->pos;
 	u8 *name = NULL;
 	struct indx_node *node = NULL;
 	u8 index_bits = ni->dir.index_bits;
 
-	/* Name is a buffer of PATH_MAX length. */
+	/* name is a buffer of PATH_MAX length */
 	static_assert(NTFS_NAME_LEN * 4 < PATH_MAX);
+
+	if (ni->dir.changed) {
+		ni->dir.changed = false;
+		pos = 0;
+	}
 
 	eod = i_size + sbi->record_size;
 
@@ -396,27 +349,11 @@ static int ntfs_readdir(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		return 0;
 
-	/* Allocate PATH_MAX bytes. */
 	name = __getname();
 	if (!name)
 		return -ENOMEM;
 
-	if (!ni->mi_loaded && ni->attr_list.size) {
-		/*
-		 * Directory inode is locked for read.
-		 * Load all subrecords to avoid 'write' access to 'ni' during
-		 * directory reading.
-		 */
-		ni_lock(ni);
-		if (!ni->mi_loaded && ni->attr_list.size) {
-			err = ni_load_all_mi(ni);
-			if (!err)
-				ni->mi_loaded = true;
-		}
-		ni_unlock(ni);
-		if (err)
-			goto out;
-	}
+	ni_lock(ni);
 
 	root = indx_get_root(&ni->dir, ni, NULL, NULL);
 	if (!root) {
@@ -426,54 +363,60 @@ static int ntfs_readdir(struct file *file, struct dir_context *ctx)
 
 	if (pos >= sbi->record_size) {
 		bit = (pos - sbi->record_size) >> index_bits;
-	} else {
-		err = ntfs_read_hdr(sbi, ni, &root->ihdr, 0, pos, name, ctx);
-		if (err)
-			goto out;
-		bit = 0;
+		goto index_enum;
 	}
+
+	hdr = &root->ihdr;
+
+	err = ntfs_read_hdr(sbi, ni, hdr, 0, pos, name, ctx);
+	if (err)
+		goto out;
+
+	bit = 0;
+
+index_enum:
 
 	if (!i_size) {
 		ctx->pos = eod;
 		goto out;
 	}
 
-	for (;;) {
-		vbo = (u64)bit << index_bits;
-		if (vbo >= i_size) {
-			ctx->pos = eod;
-			goto out;
-		}
-
-		err = indx_used_bit(&ni->dir, ni, &bit);
-		if (err)
-			goto out;
-
-		if (bit == MINUS_ONE_T) {
-			ctx->pos = eod;
-			goto out;
-		}
-
-		vbo = (u64)bit << index_bits;
-		if (vbo >= i_size) {
-			ntfs_inode_err(dir, "Looks like your dir is corrupt");
-			err = -EINVAL;
-			goto out;
-		}
-
-		err = indx_read(&ni->dir, ni, bit << ni->dir.idx2vbn_bits,
-				&node);
-		if (err)
-			goto out;
-
-		err = ntfs_read_hdr(sbi, ni, &node->index->ihdr,
-				    vbo + sbi->record_size, pos, name, ctx);
-		if (err)
-			goto out;
-
-		bit += 1;
+next_vcn:
+	vbo = (u64)bit << index_bits;
+	if (vbo >= i_size) {
+		ctx->pos = eod;
+		goto out;
 	}
 
+	err = indx_used_bit(&ni->dir, ni, &bit);
+	if (err)
+		goto out;
+
+	if (bit == MINUS_ONE_T) {
+		ctx->pos = eod;
+		goto out;
+	}
+
+	vbo = (u64)bit << index_bits;
+	if (vbo >= i_size)
+		goto fs_error;
+
+	err = indx_read(&ni->dir, ni, bit << ni->dir.idx2vbn_bits, &node);
+	if (err)
+		goto out;
+
+	hdr = &node->index->ihdr;
+	err = ntfs_read_hdr(sbi, ni, hdr, vbo + sbi->record_size, pos, name,
+			    ctx);
+	if (err)
+		goto out;
+
+	bit += 1;
+	goto next_vcn;
+
+fs_error:
+	ntfs_inode_error(dir, "Looks like your dir is corrupt");
+	err = -EINVAL;
 out:
 
 	__putname(name);
@@ -484,6 +427,8 @@ out:
 		ctx->pos = pos;
 	}
 
+	ni_unlock(ni);
+
 	return err;
 }
 
@@ -491,11 +436,11 @@ static int ntfs_dir_count(struct inode *dir, bool *is_empty, size_t *dirs,
 			  size_t *files)
 {
 	int err = 0;
-	struct ntfs_inode *ni = ntfs_i(dir);
-	struct NTFS_DE *e = NULL;
-	struct INDEX_ROOT *root;
-	struct INDEX_HDR *hdr;
-	const struct ATTR_FILE_NAME *fname;
+	ntfs_inode *ni = ntfs_i(dir);
+	NTFS_DE *e = NULL;
+	INDEX_ROOT *root;
+	INDEX_HDR *hdr;
+	const ATTR_FILE_NAME *fname;
 	u32 e_size, off, end;
 	u64 vbo = 0;
 	size_t drs = 0, fles = 0, bit = 0;
@@ -512,62 +457,67 @@ static int ntfs_dir_count(struct inode *dir, bool *is_empty, size_t *dirs,
 
 	hdr = &root->ihdr;
 
-	for (;;) {
-		end = le32_to_cpu(hdr->used);
-		off = le32_to_cpu(hdr->de_off);
+next_vcn:
 
-		for (; off + sizeof(struct NTFS_DE) <= end; off += e_size) {
-			e = Add2Ptr(hdr, off);
-			e_size = le16_to_cpu(e->size);
-			if (e_size < sizeof(struct NTFS_DE) ||
-			    off + e_size > end)
-				break;
+	end = le32_to_cpu(hdr->used);
+	off = le32_to_cpu(hdr->de_off);
 
-			if (de_is_last(e))
-				break;
+next_de:
+	if (off + sizeof(NTFS_DE) > end)
+		goto next_hdr;
 
-			fname = de_get_fname(e);
-			if (!fname)
-				continue;
+	e = Add2Ptr(hdr, off);
+	e_size = le16_to_cpu(e->size);
+	if (e_size < sizeof(NTFS_DE) || off + e_size > end)
+		goto next_hdr;
 
-			if (fname->type == FILE_NAME_DOS)
-				continue;
+	if (de_is_last(e))
+		goto next_hdr;
 
-			if (is_empty) {
-				*is_empty = false;
-				if (!dirs && !files)
-					goto out;
-			}
+	fname = de_get_fname(e);
+	if (!fname)
+		goto next_hdr;
 
-			if (fname->dup.fa & FILE_ATTRIBUTE_DIRECTORY)
-				drs += 1;
-			else
-				fles += 1;
-		}
+	if (fname->type == FILE_NAME_DOS)
+		goto next_de;
 
-		if (vbo >= i_size)
+	if (is_empty) {
+		*is_empty = false;
+		if (!dirs && !files)
 			goto out;
-
-		err = indx_used_bit(&ni->dir, ni, &bit);
-		if (err)
-			goto out;
-
-		if (bit == MINUS_ONE_T)
-			goto out;
-
-		vbo = (u64)bit << index_bits;
-		if (vbo >= i_size)
-			goto out;
-
-		err = indx_read(&ni->dir, ni, bit << ni->dir.idx2vbn_bits,
-				&node);
-		if (err)
-			goto out;
-
-		hdr = &node->index->ihdr;
-		bit += 1;
-		vbo = (u64)bit << ni->dir.idx2vbn_bits;
 	}
+
+	if (fname->dup.fa & FILE_ATTRIBUTE_DIRECTORY)
+		drs += 1;
+	else
+		fles += 1;
+
+	off += e_size;
+	goto next_de;
+
+next_hdr:
+	if (vbo >= i_size)
+		goto out;
+
+	err = indx_used_bit(&ni->dir, ni, &bit);
+	if (err)
+		goto out;
+
+	if (bit == MINUS_ONE_T)
+		goto out;
+
+	vbo = (u64)bit << index_bits;
+	if (vbo >= i_size)
+		goto out;
+
+	err = indx_read(&ni->dir, ni, bit << ni->dir.idx2vbn_bits, &node);
+	if (err)
+		goto out;
+
+	hdr = &node->index->ihdr;
+	bit += 1;
+	vbo = (u64)bit << ni->dir.idx2vbn_bits;
+	goto next_vcn;
 
 out:
 	put_indx_node(node);
@@ -588,12 +538,10 @@ bool dir_is_empty(struct inode *dir)
 	return is_empty;
 }
 
-// clang-format off
 const struct file_operations ntfs_dir_operations = {
-	.llseek		= generic_file_llseek,
-	.read		= generic_read_dir,
-	.iterate_shared	= ntfs_readdir,
-	.fsync		= generic_file_fsync,
-	.open		= ntfs_file_open,
+	.llseek = generic_file_llseek,
+	.read = generic_read_dir,
+	.iterate = ntfs_readdir,
+	.fsync = ntfs_file_fsync,
+	.open = ntfs_file_open,
 };
-// clang-format on

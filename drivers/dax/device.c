@@ -449,7 +449,7 @@ static vm_fault_t dev_dax_fault(struct vm_fault *vmf)
 	return dev_dax_huge_fault(vmf, PE_SIZE_PTE);
 }
 
-static int dev_dax_split(struct vm_area_struct *vma, unsigned long addr)
+static int dev_dax_may_split(struct vm_area_struct *vma, unsigned long addr)
 {
 	struct file *filp = vma->vm_file;
 	struct dev_dax *dev_dax = filp->private_data;
@@ -472,7 +472,7 @@ static unsigned long dev_dax_pagesize(struct vm_area_struct *vma)
 static const struct vm_operations_struct dax_vm_ops = {
 	.fault = dev_dax_fault,
 	.huge_fault = dev_dax_huge_fault,
-	.split = dev_dax_split,
+	.may_split = dev_dax_may_split,
 	.pagesize = dev_dax_pagesize,
 };
 
@@ -550,6 +550,7 @@ static int dax_open(struct inode *inode, struct file *filp)
 	inode->i_mapping->a_ops = &dev_dax_aops;
 	filp->f_mapping = inode->i_mapping;
 	filp->f_wb_err = filemap_sample_wb_err(filp->f_mapping);
+	filp->f_sb_err = file_sample_sb_err(filp);
 	filp->private_data = dev_dax;
 	inode->i_flags = S_DAX;
 

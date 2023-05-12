@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2010-2021, The Linux Foundation. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <linux/msm-bus.h>
@@ -1042,9 +1041,17 @@ static ssize_t gpuclk_show(struct device *dev,
 				    char *buf)
 {
 	struct kgsl_device *device = dev_get_drvdata(dev);
+	unsigned long freq;
+	struct kgsl_pwrctrl *pwr;
+	
+	pwr = &device->pwrctrl;
+	
+	if (device->state == KGSL_STATE_SLUMBER)
+		freq = pwr->pwrlevels[pwr->num_pwrlevels - 1].gpu_freq;
+	else
+		freq = kgsl_pwrctrl_active_freq(pwr);
 
-	return scnprintf(buf, PAGE_SIZE, "%ld\n",
-		kgsl_pwrctrl_active_freq(&device->pwrctrl));
+	return scnprintf(buf, PAGE_SIZE, "%ld\n", freq);
 }
 
 static ssize_t __timer_store(struct device *dev, struct device_attribute *attr,
@@ -1054,6 +1061,8 @@ static ssize_t __timer_store(struct device *dev, struct device_attribute *attr,
 	unsigned int val = 0;
 	struct kgsl_device *device = dev_get_drvdata(dev);
 	int ret;
+
+	return count;
 
 	ret = kgsl_sysfs_store(buf, &val);
 	if (ret)
@@ -1419,9 +1428,17 @@ static ssize_t clock_mhz_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct kgsl_device *device = dev_get_drvdata(dev);
+	unsigned long freq;
+	struct kgsl_pwrctrl *pwr;
+	
+	pwr = &device->pwrctrl;
+	
+	if (device->state == KGSL_STATE_SLUMBER)
+		freq = pwr->pwrlevels[pwr->num_pwrlevels - 1].gpu_freq;
+	else
+		freq = kgsl_pwrctrl_active_freq(pwr);
 
-	return scnprintf(buf, PAGE_SIZE, "%ld\n",
-			kgsl_pwrctrl_active_freq(&device->pwrctrl) / 1000000);
+	return scnprintf(buf, PAGE_SIZE, "%ld\n", freq / 1000000);
 }
 
 static ssize_t freq_table_mhz_show(struct device *dev,

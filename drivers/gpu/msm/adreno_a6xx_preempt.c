@@ -2,7 +2,6 @@
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include "adreno.h"
@@ -580,6 +579,7 @@ unsigned int a6xx_preemption_post_ibsubmit(struct adreno_device *adreno_dev,
 	struct adreno_ringbuffer *rb = adreno_dev->cur_rb;
 
 	if (rb) {
+		struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 		uint64_t dest = PREEMPT_SCRATCH_ADDR(adreno_dev, rb->id);
 
 		*cmds++ = cp_mem_packet(adreno_dev, CP_MEM_WRITE, 2, 2);

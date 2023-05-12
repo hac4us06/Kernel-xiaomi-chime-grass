@@ -133,12 +133,7 @@ static int hip04_irq_set_type(struct irq_data *d, unsigned int type)
 
 	raw_spin_lock(&irq_controller_lock);
 
-	ret = gic_configure_irq(irq, type, base + GIC_DIST_CONFIG, NULL);
-	if (ret && irq < 32) {
-		/* Misconfigured PPIs are usually not fatal */
-		pr_warn("GIC: PPI%d is secure or misconfigured\n", irq - 16);
-		ret = 0;
-	}
+	ret = gic_configure_irq(irq, type, base, NULL);
 
 	raw_spin_unlock(&irq_controller_lock);
 

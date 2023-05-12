@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #define pr_fmt(fmt)	"QG-K: %s: " fmt, __func__
@@ -4749,7 +4748,7 @@ static int qpnp_qg_probe(struct platform_device *pdev)
 	chip->batt_age_level = -EINVAL;
 	chip->qg_charge_counter = -EINVAL;
 
-	chip->qg_version = (u8)of_device_get_match_data(&pdev->dev);
+	chip->qg_version = (u8)(uintptr_t)of_device_get_match_data(&pdev->dev);
 
 	switch (chip->qg_version) {
 	case QG_LITE:

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ *  linux/fs/ntfs3/bitfunc.c
  *
- * Copyright (C) 2019-2021 Paragon Software GmbH, All rights reserved.
+ * Copyright (C) 2019-2020 Paragon Software GmbH, All rights reserved.
  *
  */
-
 #include <linux/blkdev.h>
 #include <linux/buffer_head.h>
 #include <linux/fs.h>
 #include <linux/nls.h>
+#include <linux/sched/signal.h>
 
 #include "debug.h"
 #include "ntfs.h"
@@ -33,34 +34,37 @@ static const u8 zero_mask[] = { 0xFF, 0xFE, 0xFC, 0xF8, 0xF0,
 /*
  * are_bits_clear
  *
- * Return: True if all bits [bit, bit+nbits) are zeros "0".
+ * Returns true if all bits [bit, bit+nbits) are zeros "0"
  */
 bool are_bits_clear(const ulong *lmap, size_t bit, size_t nbits)
 {
 	size_t pos = bit & 7;
 	const u8 *map = (u8 *)lmap + (bit >> 3);
 
-	if (pos) {
-		if (8 - pos >= nbits)
-			return !nbits || !(*map & fill_mask[pos + nbits] &
-					   zero_mask[pos]);
+	if (!pos)
+		goto check_size_t;
+	if (8 - pos >= nbits)
+		return !nbits ||
+		       !(*map & fill_mask[pos + nbits] & zero_mask[pos]);
 
-		if (*map++ & zero_mask[pos])
-			return false;
-		nbits -= 8 - pos;
-	}
+	if (*map++ & zero_mask[pos])
+		return false;
+	nbits -= 8 - pos;
 
+check_size_t:
 	pos = ((size_t)map) & (sizeof(size_t) - 1);
-	if (pos) {
-		pos = sizeof(size_t) - pos;
-		if (nbits >= pos * 8) {
-			for (nbits -= pos * 8; pos; pos--, map++) {
-				if (*map)
-					return false;
-			}
-		}
+	if (!pos)
+		goto step_size_t;
+
+	pos = sizeof(size_t) - pos;
+	if (nbits < pos * 8)
+		goto step_size_t;
+	for (nbits -= pos * 8; pos; pos--, map++) {
+		if (*map)
+			return false;
 	}
 
+step_size_t:
 	for (pos = nbits / BITS_IN_SIZE_T; pos; pos--, map += sizeof(size_t)) {
 		if (*((size_t *)map))
 			return false;
@@ -75,13 +79,14 @@ bool are_bits_clear(const ulong *lmap, size_t bit, size_t nbits)
 	if (pos && (*map & fill_mask[pos]))
 		return false;
 
+	// All bits are zero
 	return true;
 }
 
 /*
  * are_bits_set
  *
- * Return: True if all bits [bit, bit+nbits) are ones "1".
+ * Returns true if all bits [bit, bit+nbits) are ones "1"
  */
 bool are_bits_set(const ulong *lmap, size_t bit, size_t nbits)
 {
@@ -89,29 +94,33 @@ bool are_bits_set(const ulong *lmap, size_t bit, size_t nbits)
 	size_t pos = bit & 7;
 	const u8 *map = (u8 *)lmap + (bit >> 3);
 
-	if (pos) {
-		if (8 - pos >= nbits) {
-			mask = fill_mask[pos + nbits] & zero_mask[pos];
-			return !nbits || (*map & mask) == mask;
-		}
+	if (!pos)
+		goto check_size_t;
 
-		mask = zero_mask[pos];
-		if ((*map++ & mask) != mask)
+	if (8 - pos >= nbits) {
+		mask = fill_mask[pos + nbits] & zero_mask[pos];
+		return !nbits || (*map & mask) == mask;
+	}
+
+	mask = zero_mask[pos];
+	if ((*map++ & mask) != mask)
+		return false;
+	nbits -= 8 - pos;
+
+check_size_t:
+	pos = ((size_t)map) & (sizeof(size_t) - 1); // 0,1,2,3
+	if (!pos)
+		goto step_size_t;
+	pos = sizeof(size_t) - pos;
+	if (nbits < pos * 8)
+		goto step_size_t;
+
+	for (nbits -= pos * 8; pos; pos--, map++) {
+		if (*map != 0xFF)
 			return false;
-		nbits -= 8 - pos;
 	}
 
-	pos = ((size_t)map) & (sizeof(size_t) - 1);
-	if (pos) {
-		pos = sizeof(size_t) - pos;
-		if (nbits >= pos * 8) {
-			for (nbits -= pos * 8; pos; pos--, map++) {
-				if (*map != 0xFF)
-					return false;
-			}
-		}
-	}
-
+step_size_t:
 	for (pos = nbits / BITS_IN_SIZE_T; pos; pos--, map += sizeof(size_t)) {
 		if (*((size_t *)map) != MINUS_ONE_T)
 			return false;
@@ -130,5 +139,6 @@ bool are_bits_set(const ulong *lmap, size_t bit, size_t nbits)
 			return false;
 	}
 
+	// All bits are ones
 	return true;
 }

@@ -1,36 +1,33 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ *  linux/fs/ntfs3/run.c
  *
- * Copyright (C) 2019-2021 Paragon Software GmbH, All rights reserved.
+ * Copyright (C) 2019-2020 Paragon Software GmbH, All rights reserved.
  *
- * TODO: try to use extents tree (instead of array)
  */
 
 #include <linux/blkdev.h>
 #include <linux/buffer_head.h>
 #include <linux/fs.h>
-#include <linux/log2.h>
 #include <linux/nls.h>
 
 #include "debug.h"
 #include "ntfs.h"
 #include "ntfs_fs.h"
 
-/* runs_tree is a continues memory. Try to avoid big size. */
-#define NTFS3_RUN_MAX_BYTES 0x10000
-
 struct ntfs_run {
-	CLST vcn; /* Virtual cluster number. */
-	CLST len; /* Length in clusters. */
-	CLST lcn; /* Logical cluster number. */
+	CLST vcn; /* virtual cluster number */
+	CLST len; /* length in clusters */
+	CLST lcn; /* logical cluster number */
 };
 
 /*
- * run_lookup - Lookup the index of a MCB entry that is first <= vcn.
+ * run_lookup
  *
- * Case of success it will return non-zero value and set
- * @index parameter to index of entry been found.
- * Case of entry missing from list 'index' will be set to
+ * Lookup the index of a MCB entry that is first <= vcn.
+ * case of success it will return non-zero value and set
+ * 'index' parameter to index of entry been found.
+ * case of entry missing from list 'index' will be set to
  * point to insertion position for the entry question.
  */
 bool run_lookup(const struct runs_tree *run, CLST vcn, size_t *index)
@@ -46,8 +43,8 @@ bool run_lookup(const struct runs_tree *run, CLST vcn, size_t *index)
 	min_idx = 0;
 	max_idx = run->count - 1;
 
-	/* Check boundary cases specially, 'cause they cover the often requests. */
-	r = run->runs;
+	/* Check boundary cases specially, 'cause they cover the often requests */
+	r = run->runs_;
 	if (vcn < r->vcn) {
 		*index = 0;
 		return false;
@@ -71,7 +68,7 @@ bool run_lookup(const struct runs_tree *run, CLST vcn, size_t *index)
 
 	do {
 		mid_idx = min_idx + ((max_idx - min_idx) >> 1);
-		r = run->runs + mid_idx;
+		r = run->runs_ + mid_idx;
 
 		if (vcn < r->vcn) {
 			max_idx = mid_idx - 1;
@@ -90,12 +87,14 @@ bool run_lookup(const struct runs_tree *run, CLST vcn, size_t *index)
 }
 
 /*
- * run_consolidate - Consolidate runs starting from a given one.
+ * run_consolidate
+ *
+ * consolidate runs starting from a given one.
  */
 static void run_consolidate(struct runs_tree *run, size_t index)
 {
 	size_t i;
-	struct ntfs_run *r = run->runs + index;
+	struct ntfs_run *r = run->runs_ + index;
 
 	while (index + 1 < run->count) {
 		/*
@@ -125,7 +124,6 @@ static void run_consolidate(struct runs_tree *run, size_t index)
 			n->vcn += dl;
 			if (n->lcn != SPARSE_LCN)
 				n->lcn += dl;
-			dl = 0;
 		}
 
 		/*
@@ -161,34 +159,22 @@ remove_next_range:
 	}
 }
 
-/*
- * run_is_mapped_full
- *
- * Return: True if range [svcn - evcn] is mapped.
- */
 bool run_is_mapped_full(const struct runs_tree *run, CLST svcn, CLST evcn)
 {
-	size_t i;
-	const struct ntfs_run *r, *end;
-	CLST next_vcn;
+	size_t index;
 
-	if (!run_lookup(run, svcn, &i))
+	if (!run_lookup(run, svcn, &index))
 		return false;
 
-	end = run->runs + run->count;
-	r = run->runs + i;
+	do {
+		const struct ntfs_run *m = run->runs_ + index;
+		CLST end = m->vcn + m->len;
 
-	for (;;) {
-		next_vcn = r->vcn + r->len;
-		if (next_vcn > evcn)
+		if (end > evcn)
 			return true;
+	} while (++index < run->count);
 
-		if (++r >= end)
-			return false;
-
-		if (r->vcn != next_vcn)
-			return false;
-	}
+	return false;
 }
 
 bool run_lookup_entry(const struct runs_tree *run, CLST vcn, CLST *lcn,
@@ -199,13 +185,13 @@ bool run_lookup_entry(const struct runs_tree *run, CLST vcn, CLST *lcn,
 	struct ntfs_run *r;
 
 	/* Fail immediately if nrun was not touched yet. */
-	if (!run->runs)
+	if (!run->runs_)
 		return false;
 
 	if (!run_lookup(run, vcn, &idx))
 		return false;
 
-	r = run->runs + idx;
+	r = run->runs_ + idx;
 
 	if (vcn >= r->vcn + r->len)
 		return false;
@@ -225,7 +211,9 @@ bool run_lookup_entry(const struct runs_tree *run, CLST vcn, CLST *lcn,
 }
 
 /*
- * run_truncate_head - Decommit the range before vcn.
+ * run_truncate_head
+ *
+ * decommit the range before vcn
  */
 void run_truncate_head(struct runs_tree *run, CLST vcn)
 {
@@ -233,7 +221,7 @@ void run_truncate_head(struct runs_tree *run, CLST vcn)
 	struct ntfs_run *r;
 
 	if (run_lookup(run, vcn, &index)) {
-		r = run->runs + index;
+		r = run->runs_ + index;
 
 		if (vcn > r->vcn) {
 			CLST dlen = vcn - r->vcn;
@@ -247,20 +235,22 @@ void run_truncate_head(struct runs_tree *run, CLST vcn)
 		if (!index)
 			return;
 	}
-	r = run->runs;
+	r = run->runs_;
 	memmove(r, r + index, sizeof(*r) * (run->count - index));
 
 	run->count -= index;
 
 	if (!run->count) {
-		kvfree(run->runs);
-		run->runs = NULL;
+		ntfs_free(run->runs_);
+		run->runs_ = NULL;
 		run->allocated = 0;
 	}
 }
 
 /*
- * run_truncate - Decommit the range after vcn.
+ * run_truncate
+ *
+ * decommit the range after vcn
  */
 void run_truncate(struct runs_tree *run, CLST vcn)
 {
@@ -273,7 +263,7 @@ void run_truncate(struct runs_tree *run, CLST vcn)
 	 * then it will entirely be removed.
 	 */
 	if (run_lookup(run, vcn, &index)) {
-		struct ntfs_run *r = run->runs + index;
+		struct ntfs_run *r = run->runs_ + index;
 
 		r->len = vcn - r->vcn;
 
@@ -282,41 +272,28 @@ void run_truncate(struct runs_tree *run, CLST vcn)
 	}
 
 	/*
-	 * At this point 'index' is set to position that
-	 * should be thrown away (including index itself)
+	 * At this point 'index' is set to
+	 * position that should be thrown away (including index itself)
 	 * Simple one - just set the limit.
 	 */
 	run->count = index;
 
-	/* Do not reallocate array 'runs'. Only free if possible. */
+	/* Do not reallocate array 'runs'. Only free if possible */
 	if (!index) {
-		kvfree(run->runs);
-		run->runs = NULL;
+		ntfs_free(run->runs_);
+		run->runs_ = NULL;
 		run->allocated = 0;
 	}
 }
 
 /*
- * run_truncate_around - Trim head and tail if necessary.
- */
-void run_truncate_around(struct runs_tree *run, CLST vcn)
-{
-	run_truncate_head(run, vcn);
-
-	if (run->count >= NTFS3_RUN_MAX_BYTES / sizeof(struct ntfs_run) / 2)
-		run_truncate(run, (run->runs + (run->count >> 1))->vcn);
-}
-
-/*
  * run_add_entry
  *
- * Sets location to known state.
- * Run to be added may overlap with existing location.
- *
- * Return: false if of memory.
+ * sets location to known state.
+ * run to be added may overlap with existing location.
+ * returns false if of memory
  */
-bool run_add_entry(struct runs_tree *run, CLST vcn, CLST lcn, CLST len,
-		   bool is_mft)
+bool run_add_entry(struct runs_tree *run, CLST vcn, CLST lcn, CLST len)
 {
 	size_t used, index;
 	struct ntfs_run *r;
@@ -336,11 +313,11 @@ bool run_add_entry(struct runs_tree *run, CLST vcn, CLST lcn, CLST len,
 	 * Shortcut here would be case of
 	 * range not been found but one been added
 	 * continues previous run.
-	 * This case I can directly make use of
+	 * this case I can directly make use of
 	 * existing range as my start point.
 	 */
 	if (!inrange && index > 0) {
-		struct ntfs_run *t = run->runs + index - 1;
+		struct ntfs_run *t = run->runs_ + index - 1;
 
 		if (t->vcn + t->len == vcn &&
 		    (t->lcn == SPARSE_LCN) == (lcn == SPARSE_LCN) &&
@@ -356,115 +333,119 @@ bool run_add_entry(struct runs_tree *run, CLST vcn, CLST lcn, CLST len,
 	 * for a new range.
 	 * So first let's check if range I'm probing is here already.
 	 */
-	if (!inrange) {
-requires_new_range:
-		/*
-		 * Range was not found.
-		 * Insert at position 'index'
-		 */
-		used = run->count * sizeof(struct ntfs_run);
+	if (!inrange)
+		goto requires_new_range;
 
-		/*
-		 * Check allocated space.
-		 * If one is not enough to get one more entry
-		 * then it will be reallocated.
-		 */
-		if (run->allocated < used + sizeof(struct ntfs_run)) {
-			size_t bytes;
-			struct ntfs_run *new_ptr;
+	r = run->runs_ + index;
 
-			/* Use power of 2 for 'bytes'. */
-			if (!used) {
-				bytes = 64;
-			} else if (used <= 16 * PAGE_SIZE) {
-				if (is_power_of_2(run->allocated))
-					bytes = run->allocated << 1;
-				else
-					bytes = (size_t)1
-						<< (2 + blksize_bits(used));
-			} else {
-				bytes = run->allocated + (16 * PAGE_SIZE);
-			}
+	/*
+	 * If one of ranges was not allocated
+	 * then I have to split location I just matched.
+	 * and insert current one
+	 * a common case this requires tail to be reinserted
+	 * a recursive call.
+	 */
+	if (((lcn == SPARSE_LCN) != (r->lcn == SPARSE_LCN)) ||
+	    (lcn != SPARSE_LCN && lcn != r->lcn + (vcn - r->vcn))) {
+		CLST to_eat = vcn - r->vcn;
+		CLST Tovcn = to_eat + len;
 
-			WARN_ON(!is_mft && bytes > NTFS3_RUN_MAX_BYTES);
+		should_add_tail = Tovcn < r->len;
 
-			new_ptr = kvmalloc(bytes, GFP_KERNEL);
-
-			if (!new_ptr)
-				return false;
-
-			r = new_ptr + index;
-			memcpy(new_ptr, run->runs,
-			       index * sizeof(struct ntfs_run));
-			memcpy(r + 1, run->runs + index,
-			       sizeof(struct ntfs_run) * (run->count - index));
-
-			kvfree(run->runs);
-			run->runs = new_ptr;
-			run->allocated = bytes;
-
-		} else {
-			size_t i = run->count - index;
-
-			r = run->runs + index;
-
-			/* memmove appears to be a bottle neck here... */
-			if (i > 0)
-				memmove(r + 1, r, sizeof(struct ntfs_run) * i);
+		if (should_add_tail) {
+			if (r->lcn == SPARSE_LCN)
+				tail_lcn = (CLST)SPARSE_LCN;
+			else
+				tail_lcn = r->lcn + Tovcn;
+			tail_vcn = r->vcn + Tovcn;
+			tail_len = r->len - Tovcn;
 		}
 
-		r->vcn = vcn;
+		if (to_eat > 0) {
+			r->len = to_eat;
+			inrange = false;
+			index += 1;
+			goto requires_new_range;
+		}
+
+		/* lcn should match one I'm going to add. */
 		r->lcn = lcn;
-		r->len = len;
-		run->count += 1;
-	} else {
-		r = run->runs + index;
+	}
 
-		/*
-		 * If one of ranges was not allocated then we
-		 * have to split location we just matched and
-		 * insert current one.
-		 * A common case this requires tail to be reinserted
-		 * a recursive call.
-		 */
-		if (((lcn == SPARSE_LCN) != (r->lcn == SPARSE_LCN)) ||
-		    (lcn != SPARSE_LCN && lcn != r->lcn + (vcn - r->vcn))) {
-			CLST to_eat = vcn - r->vcn;
-			CLST Tovcn = to_eat + len;
+	/*
+	 * If existing range fits then I'm done.
+	 * Otherwise extend found one and fall back to range jocode.
+	 */
+	if (r->vcn + r->len < vcn + len)
+		r->len += len - ((r->vcn + r->len) - vcn);
+	goto consolidate;
 
-			should_add_tail = Tovcn < r->len;
+requires_new_range:
+	/*
+	 * Range was not found.
+	 * Insert at position.
+	 * 'index' points to the insertion point.
+	 * Here is also the place to check
+	 * if allocated size exceeded specified limit.
+	 * If it does, third part of allocation will be thrown away.
+	 */
+	used = run->count * sizeof(struct ntfs_run);
 
-			if (should_add_tail) {
-				tail_lcn = r->lcn == SPARSE_LCN
-						   ? SPARSE_LCN
-						   : (r->lcn + Tovcn);
-				tail_vcn = r->vcn + Tovcn;
-				tail_len = r->len - Tovcn;
-			}
+	/*
+	 * Check allocated space.
+	 * If one is not enough to get one more entry
+	 * then it will be reallocated
+	 */
+	if (run->allocated < used + sizeof(struct ntfs_run)) {
+		size_t bytes;
+		struct ntfs_run *new_ptr;
 
-			if (to_eat > 0) {
-				r->len = to_eat;
-				inrange = false;
-				index += 1;
-				goto requires_new_range;
-			}
-
-			/* lcn should match one were going to add. */
-			r->lcn = lcn;
+		/* Use power of 2 for 'bytes'*/
+		if (!used)
+			bytes = 64;
+		else if (used <= 16 * PAGE_SIZE) {
+			if (is_power_of2(run->allocated))
+				bytes = run->allocated << 1;
+			else
+				bytes = (size_t)1 << (2 + blksize_bits(used));
+		} else {
+			bytes = run->allocated + (16 * PAGE_SIZE);
 		}
 
-		/*
-		 * If existing range fits then were done.
-		 * Otherwise extend found one and fall back to range jocode.
-		 */
-		if (r->vcn + r->len < vcn + len)
-			r->len += len - ((r->vcn + r->len) - vcn);
+		new_ptr = ntfs_alloc(bytes, 0);
+		if (!new_ptr)
+			return false;
+
+		r = new_ptr + index;
+		memcpy(new_ptr, run->runs_, index * sizeof(struct ntfs_run));
+		memcpy(r + 1, run->runs_ + index,
+		       sizeof(struct ntfs_run) * (run->count - index));
+
+		ntfs_free(run->runs_);
+		run->runs_ = new_ptr;
+		run->allocated = bytes;
+
+	} else {
+		size_t i = run->count - index;
+
+		r = run->runs_ + index;
+
+		/* memmove appears to be a bottle neck here... */
+		if (i > 0)
+			memmove(r + 1, r, sizeof(struct ntfs_run) * i);
 	}
+
+	r->vcn = vcn;
+	r->lcn = lcn;
+	r->len = len;
+	run->count += 1;
+
+consolidate:
 
 	/*
 	 * And normalize it starting from insertion point.
 	 * It's possible that no insertion needed case if
-	 * start point lies within the range of an entry
+	 * start point lies withthe range of an entry
 	 * that 'index' points to.
 	 */
 	if (inrange && index > 0)
@@ -473,84 +454,20 @@ requires_new_range:
 	run_consolidate(run, index + 1);
 
 	/*
-	 * A special case.
-	 * We have to add extra range a tail.
+	 * a special case
+	 * I have to add extra range a tail.
 	 */
 	if (should_add_tail &&
-	    !run_add_entry(run, tail_vcn, tail_lcn, tail_len, is_mft))
+	    !run_add_entry(run, tail_vcn, tail_lcn, tail_len))
 		return false;
 
 	return true;
 }
 
-/* run_collapse_range
- *
- * Helper for attr_collapse_range(),
- * which is helper for fallocate(collapse_range).
- */
-bool run_collapse_range(struct runs_tree *run, CLST vcn, CLST len)
-{
-	size_t index, eat;
-	struct ntfs_run *r, *e, *eat_start, *eat_end;
-	CLST end;
-
-	if (WARN_ON(!run_lookup(run, vcn, &index)))
-		return true; /* Should never be here. */
-
-	e = run->runs + run->count;
-	r = run->runs + index;
-	end = vcn + len;
-
-	if (vcn > r->vcn) {
-		if (r->vcn + r->len <= end) {
-			/* Collapse tail of run .*/
-			r->len = vcn - r->vcn;
-		} else if (r->lcn == SPARSE_LCN) {
-			/* Collapse a middle part of sparsed run. */
-			r->len -= len;
-		} else {
-			/* Collapse a middle part of normal run, split. */
-			if (!run_add_entry(run, vcn, SPARSE_LCN, len, false))
-				return false;
-			return run_collapse_range(run, vcn, len);
-		}
-
-		r += 1;
-	}
-
-	eat_start = r;
-	eat_end = r;
-
-	for (; r < e; r++) {
-		CLST d;
-
-		if (r->vcn >= end) {
-			r->vcn -= len;
-			continue;
-		}
-
-		if (r->vcn + r->len <= end) {
-			/* Eat this run. */
-			eat_end = r + 1;
-			continue;
-		}
-
-		d = end - r->vcn;
-		if (r->lcn != SPARSE_LCN)
-			r->lcn += d;
-		r->len -= d;
-		r->vcn -= len - d;
-	}
-
-	eat = eat_end - eat_start;
-	memmove(eat_start, eat_end, (e - eat_end) * sizeof(*r));
-	run->count -= eat;
-
-	return true;
-}
-
 /*
- * run_get_entry - Return index-th mapped region.
+ * run_get_entry
+ *
+ * returns index-th mapped region
  */
 bool run_get_entry(const struct runs_tree *run, size_t index, CLST *vcn,
 		   CLST *lcn, CLST *len)
@@ -560,7 +477,7 @@ bool run_get_entry(const struct runs_tree *run, size_t index, CLST *vcn,
 	if (index >= run->count)
 		return false;
 
-	r = run->runs + index;
+	r = run->runs_ + index;
 
 	if (!r->len)
 		return false;
@@ -575,14 +492,16 @@ bool run_get_entry(const struct runs_tree *run, size_t index, CLST *vcn,
 }
 
 /*
- * run_packed_size - Calculate the size of packed int64.
+ * run_packed_size
+ *
+ * calculates the size of packed int64
  */
-#ifdef __BIG_ENDIAN
-static inline int run_packed_size(const s64 n)
+static inline int run_packed_size(const s64 *n)
 {
-	const u8 *p = (const u8 *)&n + sizeof(n) - 1;
+#ifdef __BIG_ENDIAN
+	const u8 *p = (const u8 *)n + sizeof(*n) - 1;
 
-	if (n >= 0) {
+	if (*n >= 0) {
 		if (p[-7] || p[-6] || p[-5] || p[-4])
 			p -= 4;
 		if (p[-3] || p[-2])
@@ -602,81 +521,11 @@ static inline int run_packed_size(const s64 n)
 		if (!(p[0] & 0x80))
 			p -= 1;
 	}
-	return (const u8 *)&n + sizeof(n) - p;
-}
-
-/* Full trusted function. It does not check 'size' for errors. */
-static inline void run_pack_s64(u8 *run_buf, u8 size, s64 v)
-{
-	const u8 *p = (u8 *)&v;
-
-	switch (size) {
-	case 8:
-		run_buf[7] = p[0];
-		/* fall through */
-	case 7:
-		run_buf[6] = p[1];
-		/* fall through */
-	case 6:
-		run_buf[5] = p[2];
-		/* fall through */
-	case 5:
-		run_buf[4] = p[3];
-		/* fall through */
-	case 4:
-		run_buf[3] = p[4];
-		/* fall through */
-	case 3:
-		run_buf[2] = p[5];
-		/* fall through */
-	case 2:
-		run_buf[1] = p[6];
-		/* fall through */
-	case 1:
-		run_buf[0] = p[7];
-	}
-}
-
-/* Full trusted function. It does not check 'size' for errors. */
-static inline s64 run_unpack_s64(const u8 *run_buf, u8 size, s64 v)
-{
-	u8 *p = (u8 *)&v;
-
-	switch (size) {
-	case 8:
-		p[0] = run_buf[7];
-		/* fall through */
-	case 7:
-		p[1] = run_buf[6];
-		/* fall through */
-	case 6:
-		p[2] = run_buf[5];
-		/* fall through */
-	case 5:
-		p[3] = run_buf[4];
-		/* fall through */
-	case 4:
-		p[4] = run_buf[3];
-		/* fall through */
-	case 3:
-		p[5] = run_buf[2];
-		/* fall through */
-	case 2:
-		p[6] = run_buf[1];
-		/* fall through */
-	case 1:
-		p[7] = run_buf[0];
-	}
-	return v;
-}
-
+	return (const u8 *)n + sizeof(*n) - p;
 #else
+	const u8 *p = (const u8 *)n;
 
-static inline int run_packed_size(const s64 n)
-{
-	const u8 *p = (const u8 *)&n;
-
-	if (n >= 0) {
+	if (*n >= 0) {
 		if (p[7] || p[6] || p[5] || p[4])
 			p += 4;
 		if (p[3] || p[2])
@@ -697,82 +546,16 @@ static inline int run_packed_size(const s64 n)
 			p += 1;
 	}
 
-	return 1 + p - (const u8 *)&n;
-}
-
-/* Full trusted function. It does not check 'size' for errors. */
-static inline void run_pack_s64(u8 *run_buf, u8 size, s64 v)
-{
-	const u8 *p = (u8 *)&v;
-
-	/* memcpy( run_buf, &v, size); Is it faster? */
-	switch (size) {
-	case 8:
-		run_buf[7] = p[7];
-		/* fall through */
-	case 7:
-		run_buf[6] = p[6];
-		/* fall through */
-	case 6:
-		run_buf[5] = p[5];
-		/* fall through */
-	case 5:
-		run_buf[4] = p[4];
-		/* fall through */
-	case 4:
-		run_buf[3] = p[3];
-		/* fall through */
-	case 3:
-		run_buf[2] = p[2];
-		/* fall through */
-	case 2:
-		run_buf[1] = p[1];
-		/* fall through */
-	case 1:
-		run_buf[0] = p[0];
-	}
-}
-
-/* full trusted function. It does not check 'size' for errors */
-static inline s64 run_unpack_s64(const u8 *run_buf, u8 size, s64 v)
-{
-	u8 *p = (u8 *)&v;
-
-	/* memcpy( &v, run_buf, size); Is it faster? */
-	switch (size) {
-	case 8:
-		p[7] = run_buf[7];
-		/* fall through */
-	case 7:
-		p[6] = run_buf[6];
-		/* fall through */
-	case 6:
-		p[5] = run_buf[5];
-		/* fall through */
-	case 5:
-		p[4] = run_buf[4];
-		/* fall through */
-	case 4:
-		p[3] = run_buf[3];
-		/* fall through */
-	case 3:
-		p[2] = run_buf[2];
-		/* fall through */
-	case 2:
-		p[1] = run_buf[1];
-		/* fall through */
-	case 1:
-		p[0] = run_buf[0];
-	}
-	return v;
-}
+	return 1 + p - (const u8 *)n;
 #endif
+}
 
 /*
- * run_pack - Pack runs into buffer.
+ * run_pack
  *
- * packed_vcns - How much runs we have packed.
- * packed_size - How much bytes we have used run_buf.
+ * packs runs into buffer
+ * packed_vcns - how much runs we have packed
+ * packed_size - how much bytes we have used run_buf
  */
 int run_pack(const struct runs_tree *run, CLST svcn, CLST len, u8 *run_buf,
 	     u32 run_buf_size, CLST *packed_vcns)
@@ -783,8 +566,9 @@ int run_pack(const struct runs_tree *run, CLST svcn, CLST len, u8 *run_buf,
 	int packed_size = 0;
 	size_t i;
 	bool ok;
-	s64 dlcn;
-	int offset_size, size_size, tmp;
+	s64 dlcn, len64;
+	int offset_size, size_size, t;
+	const u8 *p;
 
 	next_vcn = vcn = svcn;
 
@@ -801,63 +585,180 @@ int run_pack(const struct runs_tree *run, CLST svcn, CLST len, u8 *run_buf,
 	if (next_vcn != vcn)
 		goto error;
 
-	for (;;) {
-		next_vcn = vcn + len;
-		if (next_vcn > evcn1)
-			len = evcn1 - vcn;
+next_entry:
+	/* offset of current fragment relatively to previous fragment */
+	dlcn = 0;
+	next_vcn = vcn + len;
 
-		/* How much bytes required to pack len. */
-		size_size = run_packed_size(len);
+	if (next_vcn > evcn1)
+		len = evcn1 - vcn;
 
-		/* offset_size - How much bytes is packed dlcn. */
-		if (lcn == SPARSE_LCN) {
-			offset_size = 0;
-			dlcn = 0;
-		} else {
-			/* NOTE: lcn can be less than prev_lcn! */
-			dlcn = (s64)lcn - prev_lcn;
-			offset_size = run_packed_size(dlcn);
-			prev_lcn = lcn;
-		}
+	/*
+	 * mirror of len, but signed, because run_packed_size()
+	 * works with signed int only
+	 */
+	len64 = len;
 
-		tmp = run_buf_size - packed_size - 2 - offset_size;
-		if (tmp <= 0)
-			goto out;
+	/* how much bytes is packed len64 */
+	size_size = run_packed_size(&len64);
 
-		/* Can we store this entire run. */
-		if (tmp < size_size)
-			goto out;
-
-		if (run_buf) {
-			/* Pack run header. */
-			run_buf[0] = ((u8)(size_size | (offset_size << 4)));
-			run_buf += 1;
-
-			/* Pack the length of run. */
-			run_pack_s64(run_buf, size_size, len);
-
-			run_buf += size_size;
-			/* Pack the offset from previous LCN. */
-			run_pack_s64(run_buf, offset_size, dlcn);
-			run_buf += offset_size;
-		}
-
-		packed_size += 1 + offset_size + size_size;
-		*packed_vcns += len;
-
-		if (packed_size + 1 >= run_buf_size || next_vcn >= evcn1)
-			goto out;
-
-		ok = run_get_entry(run, ++i, &vcn, &lcn, &len);
-		if (!ok)
-			goto error;
-
-		if (next_vcn != vcn)
-			goto error;
+	/* offset_size - how much bytes is packed dlcn */
+	if (lcn == SPARSE_LCN)
+		offset_size = 0;
+	else {
+		/* NOTE: lcn can be less than prev_lcn! */
+		dlcn = (s64)lcn - prev_lcn;
+		offset_size = run_packed_size(&dlcn);
+		prev_lcn = lcn;
 	}
 
+	t = run_buf_size - packed_size - 2 - offset_size;
+	if (t <= 0)
+		goto out;
+
+	/* can we store this entire run */
+	if (t < size_size)
+		goto out;
+
+	if (!run_buf)
+		goto skip_pack;
+
+	p = (u8 *)&len64;
+
+	/* pack run header */
+	run_buf[0] = ((u8)(size_size | (offset_size << 4)));
+	run_buf += 1;
+
+	/* Pack the length of run */
+	switch (size_size) {
+#ifdef __BIG_ENDIAN
+	case 8:
+		run_buf[7] = p[0];
+		fallthrough;
+	case 7:
+		run_buf[6] = p[1];
+		fallthrough;
+	case 6:
+		run_buf[5] = p[2];
+		fallthrough;
+	case 5:
+		run_buf[4] = p[3];
+		fallthrough;
+	case 4:
+		run_buf[3] = p[4];
+		fallthrough;
+	case 3:
+		run_buf[2] = p[5];
+		fallthrough;
+	case 2:
+		run_buf[1] = p[6];
+		fallthrough;
+	case 1:
+		run_buf[0] = p[7];
+#else
+	case 8:
+		run_buf[7] = p[7];
+		fallthrough;
+	case 7:
+		run_buf[6] = p[6];
+		fallthrough;
+	case 6:
+		run_buf[5] = p[5];
+		fallthrough;
+	case 5:
+		run_buf[4] = p[4];
+		fallthrough;
+	case 4:
+		run_buf[3] = p[3];
+		fallthrough;
+	case 3:
+		run_buf[2] = p[2];
+		fallthrough;
+	case 2:
+		run_buf[1] = p[1];
+		fallthrough;
+	case 1:
+		run_buf[0] = p[0];
+#endif
+	}
+
+	run_buf += size_size;
+	p = (u8 *)&dlcn;
+
+	/* Pack the offset from previous lcn */
+	switch (offset_size) {
+#ifdef __BIG_ENDIAN
+	case 8:
+		run_buf[7] = p[0];
+		fallthrough;
+	case 7:
+		run_buf[6] = p[1];
+		fallthrough;
+	case 6:
+		run_buf[5] = p[2];
+		fallthrough;
+	case 5:
+		run_buf[4] = p[3];
+		fallthrough;
+	case 4:
+		run_buf[3] = p[4];
+		fallthrough;
+	case 3:
+		run_buf[2] = p[5];
+		fallthrough;
+	case 2:
+		run_buf[1] = p[6];
+		fallthrough;
+	case 1:
+		run_buf[0] = p[7];
+#else
+	case 8:
+		run_buf[7] = p[7];
+		fallthrough;
+	case 7:
+		run_buf[6] = p[6];
+		fallthrough;
+	case 6:
+		run_buf[5] = p[5];
+		fallthrough;
+	case 5:
+		run_buf[4] = p[4];
+		fallthrough;
+	case 4:
+		run_buf[3] = p[3];
+		fallthrough;
+	case 3:
+		run_buf[2] = p[2];
+		fallthrough;
+	case 2:
+		run_buf[1] = p[1];
+		fallthrough;
+	case 1:
+		run_buf[0] = p[0];
+#endif
+	}
+
+	run_buf += offset_size;
+
+skip_pack:
+
+	packed_size += 1 + offset_size + size_size;
+	*packed_vcns += len;
+
+	if (packed_size + 1 >= run_buf_size || next_vcn >= evcn1)
+		goto out;
+
+	ok = run_get_entry(run, ++i, &vcn, &lcn, &len);
+	if (!ok)
+		goto error;
+
+	if (next_vcn != vcn)
+		goto error;
+
+	goto next_entry;
+
 out:
-	/* Store last zero. */
+	/* Store last zero */
 	if (run_buf)
 		run_buf[0] = 0;
 
@@ -868,19 +769,26 @@ error:
 }
 
 /*
- * run_unpack - Unpack packed runs from @run_buf.
+ * run_unpack
  *
- * Return: Error if negative, or real used bytes.
+ * unpacks packed runs from "run_buf"
+ * returns error, if negative, or real used bytes
  */
-int run_unpack(struct runs_tree *run, struct ntfs_sb_info *sbi, CLST ino,
-	       CLST svcn, CLST evcn, CLST vcn, const u8 *run_buf,
-	       u32 run_buf_size)
+int run_unpack(struct runs_tree *run, ntfs_sb_info *sbi, CLST ino, CLST svcn,
+	       CLST evcn, const u8 *run_buf, u32 run_buf_size)
 {
-	u64 prev_lcn, vcn64, lcn, next_vcn;
+	u64 prev_lcn, vcn;
 	const u8 *run_last, *run_0;
-	bool is_mft = ino == MFT_REC_MFT;
+	u64 lcn, len;
+	/* size_size - how much bytes is packed len */
+	u8 size_size;
+	/* offset_size - how much bytes is packed dlcn */
+	u8 offset_size;
+	u8 *p;
+	u64 next_vcn;
+	s64 dlcn;
 
-	/* Check for empty. */
+	/* Check for empty */
 	if (evcn + 1 == svcn)
 		return 0;
 
@@ -890,130 +798,221 @@ int run_unpack(struct runs_tree *run, struct ntfs_sb_info *sbi, CLST ino,
 	run_0 = run_buf;
 	run_last = run_buf + run_buf_size;
 	prev_lcn = 0;
-	vcn64 = svcn;
+	vcn = svcn;
 
-	/* Read all runs the chain. */
-	/* size_size - How much bytes is packed len. */
-	while (run_buf < run_last) {
-		/* size_size - How much bytes is packed len. */
-		u8 size_size = *run_buf & 0xF;
-		/* offset_size - How much bytes is packed dlcn. */
-		u8 offset_size = *run_buf++ >> 4;
-		u64 len;
+	/* Read all runs the chain */
+next_run:
+	/* size_size - how much bytes is packed len */
+	size_size = *run_buf & 0xF;
+	/* offset_size - how much bytes is packed dlcn */
+	offset_size = *run_buf++ >> 4;
 
-		if (!size_size)
-			break;
+	/*
+	 * Unpack runs.
+	 * NOTE: runs are stored little endian order
+	 * "len" is unsigned value, "dlcn" is signed
+	 */
+	if (!size_size)
+		goto out;
 
-		/*
-		 * Unpack runs.
-		 * NOTE: Runs are stored little endian order
-		 * "len" is unsigned value, "dlcn" is signed.
-		 * Large positive number requires to store 5 bytes
-		 * e.g.: 05 FF 7E FF FF 00 00 00
-		 */
-		if (size_size > 8)
-			return -EINVAL;
+	/*
+	 * Large positive number requires to store 5 bytes
+	 * e.g.: 05 FF 7E FF FF 00 00 00
+	 */
+	len = 0;
+	p = (u8 *)&len;
 
-		len = run_unpack_s64(run_buf, size_size, 0);
-		/* Skip size_size. */
-		run_buf += size_size;
-
-		if (!len)
-			return -EINVAL;
-
-		if (!offset_size)
-			lcn = SPARSE_LCN64;
-		else if (offset_size <= 8) {
-			s64 dlcn;
-
-			/* Initial value of dlcn is -1 or 0. */
-			dlcn = (run_buf[offset_size - 1] & 0x80) ? (s64)-1 : 0;
-			dlcn = run_unpack_s64(run_buf, offset_size, dlcn);
-			/* Skip offset_size. */
-			run_buf += offset_size;
-
-			if (!dlcn)
-				return -EINVAL;
-			lcn = prev_lcn + dlcn;
-			prev_lcn = lcn;
-		} else
-			return -EINVAL;
-
-		next_vcn = vcn64 + len;
-		/* Check boundary. */
-		if (next_vcn > evcn + 1)
-			return -EINVAL;
-
-#ifndef CONFIG_NTFS3_64BIT_CLUSTER
-		if (next_vcn > 0x100000000ull || (lcn + len) > 0x100000000ull) {
-			ntfs_err(
-				sbi->sb,
-				"This driver is compiled without CONFIG_NTFS3_64BIT_CLUSTER (like windows driver).\n"
-				"Volume contains 64 bits run: vcn %llx, lcn %llx, len %llx.\n"
-				"Activate CONFIG_NTFS3_64BIT_CLUSTER to process this case",
-				vcn64, lcn, len);
-			return -EOPNOTSUPP;
-		}
-#endif
-		if (lcn != SPARSE_LCN64 && lcn + len > sbi->used.bitmap.nbits) {
-			/* LCN range is out of volume. */
-			return -EINVAL;
-		}
-
-		if (!run)
-			; /* Called from check_attr(fslog.c) to check run. */
-		else if (run == RUN_DEALLOCATE) {
-			/*
-			 * Called from ni_delete_all to free clusters
-			 * without storing in run.
-			 */
-			if (lcn != SPARSE_LCN64)
-				mark_as_free_ex(sbi, lcn, len, true);
-		} else if (vcn64 >= vcn) {
-			if (!run_add_entry(run, vcn64, lcn, len, is_mft))
-				return -ENOMEM;
-		} else if (next_vcn > vcn) {
-			u64 dlen = vcn - vcn64;
-
-			if (!run_add_entry(run, vcn, lcn + dlen, len - dlen,
-					   is_mft))
-				return -ENOMEM;
-		}
-
-		vcn64 = next_vcn;
-	}
-
-	if (vcn64 != evcn + 1) {
-		/* Not expected length of unpacked runs. */
+	switch (size_size) {
+	default:
+error:
 		return -EINVAL;
+
+#ifdef __BIG_ENDIAN
+	case 8:
+		p[0] = run_buf[7];
+		fallthrough;
+	case 7:
+		p[1] = run_buf[6];
+		fallthrough;
+	case 6:
+		p[2] = run_buf[5];
+		fallthrough;
+	case 5:
+		p[3] = run_buf[4];
+		fallthrough;
+	case 4:
+		p[4] = run_buf[3];
+		fallthrough;
+	case 3:
+		p[5] = run_buf[2];
+		fallthrough;
+	case 2:
+		p[6] = run_buf[1];
+		fallthrough;
+	case 1:
+		p[7] = run_buf[0];
+#else
+	case 8:
+		p[7] = run_buf[7];
+		fallthrough;
+	case 7:
+		p[6] = run_buf[6];
+		fallthrough;
+	case 6:
+		p[5] = run_buf[5];
+		fallthrough;
+	case 5:
+		p[4] = run_buf[4];
+		fallthrough;
+	case 4:
+		p[3] = run_buf[3];
+		fallthrough;
+	case 3:
+		p[2] = run_buf[2];
+		fallthrough;
+	case 2:
+		p[1] = run_buf[1];
+		fallthrough;
+	case 1:
+		p[0] = run_buf[0];
+#endif
 	}
 
-	return run_buf - run_0;
+	/* skip size_size */
+	run_buf += size_size;
+
+	if (!len)
+		goto error;
+
+	if (!offset_size) {
+		lcn = SPARSE_LCN;
+		goto next_vcn;
+	}
+	/* Check sign */
+	dlcn = (run_buf[offset_size - 1] & 0x80) ? (s64)-1 : 0;
+	p = (u8 *)&dlcn;
+
+	switch (offset_size) {
+	default:
+		goto error;
+
+#ifdef __BIG_ENDIAN
+	case 8:
+		p[0] = run_buf[7];
+		fallthrough;
+	case 7:
+		p[1] = run_buf[6];
+		fallthrough;
+	case 6:
+		p[2] = run_buf[5];
+		fallthrough;
+	case 5:
+		p[3] = run_buf[4];
+		fallthrough;
+	case 4:
+		p[4] = run_buf[3];
+		fallthrough;
+	case 3:
+		p[5] = run_buf[2];
+		fallthrough;
+	case 2:
+		p[6] = run_buf[1];
+		fallthrough;
+	case 1:
+		p[7] = run_buf[0];
+#else
+	case 8:
+		p[7] = run_buf[7];
+		fallthrough;
+	case 7:
+		p[6] = run_buf[6];
+		fallthrough;
+	case 6:
+		p[5] = run_buf[5];
+		fallthrough;
+	case 5:
+		p[4] = run_buf[4];
+		fallthrough;
+	case 4:
+		p[3] = run_buf[3];
+		fallthrough;
+	case 3:
+		p[2] = run_buf[2];
+		fallthrough;
+	case 2:
+		p[1] = run_buf[1];
+		fallthrough;
+	case 1:
+		p[0] = run_buf[0];
+#endif
+	}
+
+	/* skip offset_size */
+	run_buf += offset_size;
+	lcn = prev_lcn + dlcn;
+	prev_lcn = lcn;
+
+next_vcn:
+	next_vcn = vcn + len;
+	/* check boundary */
+	if (next_vcn > evcn + 1)
+		goto error;
+
+#ifndef NTFS3_64BIT_CLUSTER
+	if ((vcn >> 32)
+	    /* 0xffffffffffffffff is a valid 'lcn' */
+	    || (lcn + 1) > 0x100000000ull || (len >> 32)) {
+		goto error;
+	}
+#endif
+
+	if (!run)
+		; /* called from check_attr(fslog.c) to check run */
+	else if ((size_t)run == 1) {
+		/* called from ni_delete_all to free clusters without storing in run */
+		if (lcn != SPARSE_LCN)
+			mark_as_free_ex(sbi, lcn, len, true);
+	} else if (!run_add_entry(run, vcn, lcn, len))
+		return -ENOMEM;
+
+	if (lcn != SPARSE_LCN && lcn + len > sbi->used.bitmap.nbits)
+		return -EINVAL;
+
+	vcn = next_vcn;
+
+	if (run_buf < run_last)
+		goto next_run;
+
+out:
+	/* Check vcn consistency */
+	if (vcn == evcn + 1)
+		return run_buf - run_0;
+
+	return -EINVAL;
 }
 
 #ifdef NTFS3_CHECK_FREE_CLST
 /*
- * run_unpack_ex - Unpack packed runs from "run_buf".
+ * run_unpack_ex
  *
- * Checks unpacked runs to be used in bitmap.
- *
- * Return: Error if negative, or real used bytes.
+ * unpacks packed runs from "run_buf"
+ * checks unpacked runs to be used in bitmap
+ * returns error, if negative, or real used bytes
  */
-int run_unpack_ex(struct runs_tree *run, struct ntfs_sb_info *sbi, CLST ino,
-		  CLST svcn, CLST evcn, CLST vcn, const u8 *run_buf,
-		  u32 run_buf_size)
+int run_unpack_ex(struct runs_tree *run, ntfs_sb_info *sbi, CLST ino, CLST svcn,
+		  CLST evcn, const u8 *run_buf, u32 run_buf_size)
 {
 	int ret, err;
-	CLST next_vcn, lcn, len;
+	CLST next_vcn, vcn, lcn, len;
 	size_t index;
 	bool ok;
-	struct wnd_bitmap *wnd;
+	wnd_bitmap *wnd;
 
-	ret = run_unpack(run, sbi, ino, svcn, evcn, vcn, run_buf, run_buf_size);
-	if (ret <= 0)
+	ret = run_unpack(run, sbi, ino, svcn, evcn, run_buf, run_buf_size);
+	if (ret < 0)
 		return ret;
 
-	if (!sbi->used.bitmap.sb || !run || run == RUN_DEALLOCATE)
+	if (!sbi->used.bitmap.sb || !run || (size_t)run == 1)
 		return ret;
 
 	if (ino == MFT_REC_BADCLUST)
@@ -1025,6 +1024,8 @@ int run_unpack_ex(struct runs_tree *run, struct ntfs_sb_info *sbi, CLST ino,
 	for (ok = run_lookup_entry(run, vcn, &lcn, &len, &index);
 	     next_vcn <= evcn;
 	     ok = run_get_entry(run, ++index, &vcn, &lcn, &len)) {
+		CLST real_free, i;
+
 		if (!ok || next_vcn != vcn)
 			return -EINVAL;
 
@@ -1036,40 +1037,48 @@ int run_unpack_ex(struct runs_tree *run, struct ntfs_sb_info *sbi, CLST ino,
 		if (sbi->flags & NTFS_FLAGS_NEED_REPLAY)
 			continue;
 
+next:
 		down_read_nested(&wnd->rw_lock, BITMAP_MUTEX_CLUSTERS);
-		/* Check for free blocks. */
+		/* Check for free blocks */
 		ok = wnd_is_used(wnd, lcn, len);
 		up_read(&wnd->rw_lock);
 		if (ok)
 			continue;
 
-		/* Looks like volume is corrupted. */
 		ntfs_set_state(sbi, NTFS_DIRTY_ERROR);
 
-		if (down_write_trylock(&wnd->rw_lock)) {
-			/* Mark all zero bits as used in range [lcn, lcn+len). */
-			CLST i, lcn_f = 0, len_f = 0;
+		if (!down_write_trylock(&wnd->rw_lock))
+			continue;
 
-			err = 0;
-			for (i = 0; i < len; i++) {
-				if (wnd_is_free(wnd, lcn + i, 1)) {
-					if (!len_f)
-						lcn_f = lcn + i;
-					len_f += 1;
-				} else if (len_f) {
-					err = wnd_set_used(wnd, lcn_f, len_f);
-					len_f = 0;
-					if (err)
-						break;
-				}
-			}
+		/* Find first free */
+		real_free = len;
+		while (real_free && !wnd_is_free(wnd, lcn, 1)) {
+			lcn += 1;
+			real_free -= 1;
+		}
 
-			if (len_f)
-				err = wnd_set_used(wnd, lcn_f, len_f);
-
+		if (!real_free) {
 			up_write(&wnd->rw_lock);
-			if (err)
-				return err;
+			continue;
+		}
+
+		/* Find total free */
+		i = 1;
+		while (i < real_free && wnd_is_free(wnd, lcn + i, 1))
+			i += 1;
+
+		real_free = i;
+
+		err = wnd_set_used(wnd, lcn, real_free);
+		up_write(&wnd->rw_lock);
+
+		if (err)
+			return err;
+
+		if (len != real_free) {
+			len -= real_free + 1;
+			lcn += real_free + 1;
+			goto next;
 		}
 	}
 
@@ -1080,34 +1089,100 @@ int run_unpack_ex(struct runs_tree *run, struct ntfs_sb_info *sbi, CLST ino,
 /*
  * run_get_highest_vcn
  *
- * Return the highest vcn from a mapping pairs array
- * it used while replaying log file.
+ * returns the highest vcn from a mapping pairs array
+ * it used while replaying log file
  */
 int run_get_highest_vcn(CLST vcn, const u8 *run_buf, u64 *highest_vcn)
 {
+	const u8 *run = run_buf;
 	u64 vcn64 = vcn;
 	u8 size_size;
+	u8 offset_size;
+	u64 len;
+	u8 *p;
 
-	while ((size_size = *run_buf & 0xF)) {
-		u8 offset_size = *run_buf++ >> 4;
-		u64 len;
+next_run:
+	size_size = *run & 0xF;
+	if (!size_size)
+		goto out;
 
-		if (size_size > 8 || offset_size > 8)
-			return -EINVAL;
+	offset_size = *run++ >> 4;
 
-		len = run_unpack_s64(run_buf, size_size, 0);
-		if (!len)
-			return -EINVAL;
+	len = 0;
+	p = (u8 *)&len;
 
-		run_buf += size_size + offset_size;
-		vcn64 += len;
+	switch (size_size) {
+	default:
+error:
+		return -EINVAL;
 
-#ifndef CONFIG_NTFS3_64BIT_CLUSTER
-		if (vcn64 > 0x100000000ull)
-			return -EINVAL;
+#ifdef __BIG_ENDIAN
+	case 8:
+		p[0] = run[7];
+		fallthrough;
+	case 7:
+		p[1] = run[6];
+		fallthrough;
+	case 6:
+		p[2] = run[5];
+		fallthrough;
+	case 5:
+		p[3] = run[4];
+		fallthrough;
+	case 4:
+		p[4] = run[3];
+		fallthrough;
+	case 3:
+		p[5] = run[2];
+		fallthrough;
+	case 2:
+		p[6] = run[1];
+		fallthrough;
+	case 1:
+		p[7] = run[0];
+#else
+	case 8:
+		p[7] = run[7];
+		fallthrough;
+	case 7:
+		p[6] = run[6];
+		fallthrough;
+	case 6:
+		p[5] = run[5];
+		fallthrough;
+	case 5:
+		p[4] = run[4];
+		fallthrough;
+	case 4:
+		p[3] = run[3];
+		fallthrough;
+	case 3:
+		p[2] = run[2];
+		fallthrough;
+	case 2:
+		p[1] = run[1];
+		fallthrough;
+	case 1:
+		p[0] = run[0];
 #endif
 	}
 
+	/* skip size_size */
+	run += size_size;
+
+	if (!len)
+		goto error;
+
+	run += offset_size;
+
+#ifdef NTFS3_64BIT_CLUSTER
+	if ((vcn >> 32) || (len >> 32))
+		goto error;
+#endif
+	vcn64 += len;
+	goto next_run;
+
+out:
 	*highest_vcn = vcn64 - 1;
 	return 0;
 }

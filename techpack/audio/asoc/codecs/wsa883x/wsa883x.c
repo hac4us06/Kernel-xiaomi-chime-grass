@@ -29,7 +29,6 @@
 #include <asoc/msm-cdc-supply.h>
 #include "wsa883x.h"
 #include "internal.h"
-#include "asoc/bolero-slave-internal.h"
 
 #define T1_TEMP -10
 #define T2_TEMP 150

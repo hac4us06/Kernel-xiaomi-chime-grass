@@ -2,7 +2,6 @@
 /*
  * Copyright (c) 2002,2007-2020, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (C) 2020 XiaoMi, Inc.
  */
 
 #include <linux/sched/clock.h>
@@ -372,7 +371,7 @@ int adreno_ringbuffer_probe(struct adreno_device *adreno_dev)
 			KGSL_MEMDESC_RANDOM | KGSL_MEMDESC_PRIVILEGED;
 
 		status = kgsl_allocate_global(device, &device->scratch,
-				PAGE_SIZE, 0, KGSL_MEMDESC_RANDOM, "scratch");
+				PAGE_SIZE, 0, priv, "scratch");
 		if (status != 0)
 			return status;
 	}

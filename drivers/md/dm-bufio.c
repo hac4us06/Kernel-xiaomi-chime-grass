@@ -1442,10 +1442,6 @@ EXPORT_SYMBOL_GPL(dm_bufio_get_block_size);
 sector_t dm_bufio_get_device_size(struct dm_bufio_client *c)
 {
 	sector_t s = i_size_read(c->bdev->bd_inode) >> SECTOR_SHIFT;
-	if (s >= c->start)
-		s -= c->start;
-	else
-		s = 0;
 	if (likely(c->sectors_per_block_bits >= 0))
 		s >>= c->sectors_per_block_bits;
 	else
@@ -1453,12 +1449,6 @@ sector_t dm_bufio_get_device_size(struct dm_bufio_client *c)
 	return s;
 }
 EXPORT_SYMBOL_GPL(dm_bufio_get_device_size);
-
-struct dm_io_client *dm_bufio_get_dm_io_client(struct dm_bufio_client *c)
-{
-	return c->dm_io;
-}
-EXPORT_SYMBOL_GPL(dm_bufio_get_dm_io_client);
 
 sector_t dm_bufio_get_block_number(struct dm_buffer *b)
 {
@@ -1941,7 +1931,7 @@ static int __init dm_bufio_init(void)
 	dm_bufio_allocated_vmalloc = 0;
 	dm_bufio_current_allocated = 0;
 
-	mem = (__u64)mult_frac(totalram_pages() - totalhigh_pages(),
+	mem = (__u64)mult_frac(totalram_pages - totalhigh_pages,
 			       DM_BUFIO_MEMORY_PERCENT, 100) << PAGE_SHIFT;
 
 	if (mem > ULONG_MAX)

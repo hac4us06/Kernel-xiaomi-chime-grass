@@ -127,10 +127,8 @@ static int __control_devkmsg(char *str)
 
 static int __init control_devkmsg(char *str)
 {
-	if (__control_devkmsg(str) < 0) {
-		pr_warn("printk.devkmsg: bad option string '%s'\n", str);
+	if (__control_devkmsg(str) < 0)
 		return 1;
-	}
 
 	/*
 	 * Set sysctl string accordingly:
@@ -149,7 +147,7 @@ static int __init control_devkmsg(char *str)
 	 */
 	devkmsg_log |= DEVKMSG_LOG_MASK_LOCK;
 
-	return 1;
+	return 0;
 }
 __setup("printk.devkmsg=", control_devkmsg);
 
@@ -786,6 +784,9 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 	size_t len = iov_iter_count(from);
 	ssize_t ret = len;
 
+	/* Don't allow userspace to write to /dev/kmesg */
+	return len;
+	
 	if (!user || len > LOG_LINE_MAX)
 		return -EINVAL;
 
@@ -2152,15 +2153,8 @@ static int __init console_setup(char *str)
 	char *s, *options, *brl_options = NULL;
 	int idx;
 
-	/*
-	 * console="" or console=null have been suggested as a way to
-	 * disable console output. Use ttynull that has been created
-	 * for exacly this purpose.
-	 */
-	if (str[0] == 0 || strcmp(str, "null") == 0) {
-		__add_preferred_console("ttynull", 0, NULL, NULL);
+	if (str[0] == 0)
 		return 1;
-	}
 
 	if (_braille_console_setup(&str, &brl_options))
 		return 1;

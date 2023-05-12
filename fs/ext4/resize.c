@@ -74,11 +74,6 @@ int ext4_resize_begin(struct super_block *sb)
 		return -EPERM;
 	}
 
-	if (ext4_has_feature_sparse_super2(sb)) {
-		ext4_msg(sb, KERN_ERR, "Online resizing not supported with sparse_super2");
-		return -EOPNOTSUPP;
-	}
-
 	if (test_and_set_bit_lock(EXT4_FLAGS_RESIZING,
 				  &EXT4_SB(sb)->s_ext4_flags))
 		ret = -EBUSY;
@@ -2071,7 +2066,7 @@ retry:
 			goto out;
 	}
 
-	if (ext4_blocks_count(es) == n_blocks_count)
+	if (ext4_blocks_count(es) == n_blocks_count && n_blocks_count_retry == 0)
 		goto out;
 
 	err = ext4_alloc_flex_bg_array(sb, n_group + 1);

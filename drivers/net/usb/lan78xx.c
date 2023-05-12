@@ -63,8 +63,6 @@
 #define LAN7801_USB_PRODUCT_ID		(0x7801)
 #define LAN78XX_EEPROM_MAGIC		(0x78A5)
 #define LAN78XX_OTP_MAGIC		(0x78F3)
-#define AT29M2AF_USB_VENDOR_ID		(0x07C9)
-#define AT29M2AF_USB_PRODUCT_ID	(0x0012)
 
 #define	MII_READ			1
 #define	MII_WRITE			0
@@ -1160,7 +1158,7 @@ static int lan78xx_link_reset(struct lan78xx_net *dev)
 {
 	struct phy_device *phydev = dev->net->phydev;
 	struct ethtool_link_ksettings ecmd;
-	int ladv, radv, ret, link;
+	int ladv, radv, ret;
 	u32 buf;
 
 	/* clear LAN78xx interrupt status */
@@ -1168,12 +1166,9 @@ static int lan78xx_link_reset(struct lan78xx_net *dev)
 	if (unlikely(ret < 0))
 		return -EIO;
 
-	mutex_lock(&phydev->lock);
 	phy_read_status(phydev);
-	link = phydev->link;
-	mutex_unlock(&phydev->lock);
 
-	if (!link && dev->link_on) {
+	if (!phydev->link && dev->link_on) {
 		dev->link_on = false;
 
 		/* reset MAC */
@@ -1186,7 +1181,7 @@ static int lan78xx_link_reset(struct lan78xx_net *dev)
 			return -EIO;
 
 		del_timer(&dev->stat_monitor);
-	} else if (link && !dev->link_on) {
+	} else if (phydev->link && !dev->link_on) {
 		dev->link_on = true;
 
 		phy_ethtool_ksettings_get(phydev, &ecmd);
@@ -1476,14 +1471,9 @@ static int lan78xx_set_eee(struct net_device *net, struct ethtool_eee *edata)
 
 static u32 lan78xx_get_link(struct net_device *net)
 {
-	u32 link;
-
-	mutex_lock(&net->phydev->lock);
 	phy_read_status(net->phydev);
-	link = net->phydev->link;
-	mutex_unlock(&net->phydev->lock);
 
-	return link;
+	return net->phydev->link;
 }
 
 static void lan78xx_get_drvinfo(struct net_device *net,
@@ -2139,7 +2129,7 @@ static int lan78xx_phy_init(struct lan78xx_net *dev)
 	if (dev->domain_data.phyirq > 0)
 		phydev->irq = dev->domain_data.phyirq;
 	else
-		phydev->irq = PHY_POLL;
+		phydev->irq = 0;
 	netdev_dbg(dev->net, "phydev->irq = %d\n", phydev->irq);
 
 	/* set to AUTOMDIX */
@@ -3758,12 +3748,6 @@ static int lan78xx_probe(struct usb_interface *intf,
 
 	dev->maxpacket = usb_maxpacket(dev->udev, dev->pipe_out, 1);
 
-	/* Reject broken descriptors. */
-	if (dev->maxpacket == 0) {
-		ret = -ENODEV;
-		goto out4;
-	}
-
 	/* driver requires remote-wakeup capability during autosuspend. */
 	intf->needs_remote_wakeup = 1;
 
@@ -4157,10 +4141,6 @@ static const struct usb_device_id products[] = {
 	{
 	/* LAN7801 USB Gigabit Ethernet Device */
 	USB_DEVICE(LAN78XX_USB_VENDOR_ID, LAN7801_USB_PRODUCT_ID),
-	},
-	{
-	/* ATM2-AF USB Gigabit Ethernet Device */
-	USB_DEVICE(AT29M2AF_USB_VENDOR_ID, AT29M2AF_USB_PRODUCT_ID),
 	},
 	{},
 };

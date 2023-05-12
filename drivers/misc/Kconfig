@@ -532,7 +532,7 @@ config MISC_RTSX
 
 config UID_SYS_STATS
 	bool "Per-UID statistics"
-	depends on TASK_XACCT && TASK_IO_ACCOUNTING
+	depends on PROFILING && TASK_XACCT && TASK_IO_ACCOUNTING
 	help
 	  Per UID based cpu time statistics exported to /proc/uid_cputime
 	  Per UID based io statistics exported to /proc/uid_io
@@ -633,24 +633,20 @@ config QTI_MAXIM_FAN_CONTROLLER
 	  Also, this driver initializes the power for the fan controller
 	  and exposes sysfs node to control different speeds of fan.
 
+config KINECTICS_XR_NORDIC
+	tristate "Nordic Misc driver support in XR Reference devices"
+	help
+	  This driver supports Nordic Chip in XR Reference devices.
+	  This driver interfaces with SoC to Nordic chip over SPI and contains
+	  code to power up the Nordic chip and initializes SPI interface. Also,
+	  this also parses the gpios and interrupts from device tree and sets
+	  the gpios and interrupt handler for handling the interrupt.
+
 config FORCE_FAST_CHARGE
 	bool "Force faster charge rate for USB"
 	default n
 	help
 	  This allows users to override default charge rate for USB
-
-config BATTERY_SAVER
-	bool "Battery saver mode for kernelspace"
-	help
-	  This driver creates a sysfs toggle that can be enabled when
-	  battery saver mode is activated in userspace, and provides
-	  functions to check the status of battery saver and to activate
-	  it from anywhere in the kernel.
-
-	  The former can be used to disable features that may otherwise
-	  drain battery faster, such as CPU and DDR boosting.
-
-	  If in doubt, say N.
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
@@ -662,6 +658,7 @@ source "drivers/misc/mei/Kconfig"
 source "drivers/misc/vmw_vmci/Kconfig"
 source "drivers/misc/mic/Kconfig"
 source "drivers/misc/genwqe/Kconfig"
+source "drivers/misc/kprofiles/Kconfig"
 source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/ocxl/Kconfig"

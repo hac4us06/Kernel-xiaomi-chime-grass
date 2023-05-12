@@ -197,6 +197,7 @@ static struct file *alloc_file(const struct path *path, int flags,
 	file->f_inode = path->dentry->d_inode;
 	file->f_mapping = path->dentry->d_inode->i_mapping;
 	file->f_wb_err = filemap_sample_wb_err(file->f_mapping);
+	file->f_sb_err = file_sample_sb_err(file);
 	if ((file->f_mode & FMODE_READ) &&
 	     likely(fop->read || fop->read_iter))
 		file->f_mode |= FMODE_CAN_READ;
@@ -332,9 +333,9 @@ void flush_delayed_fput_wait(void)
 	flush_delayed_work(&delayed_fput_work);
 }
 
-void fput_many(struct file *file, unsigned int refs)
+void fput(struct file *file)
 {
-	if (atomic_long_sub_and_test(refs, &file->f_count)) {
+	if (atomic_long_dec_and_test(&file->f_count)) {
 		struct task_struct *task = current;
 
 		if (likely(!in_interrupt() && !(task->flags & PF_KTHREAD))) {
@@ -351,11 +352,6 @@ void fput_many(struct file *file, unsigned int refs)
 		if (llist_add(&file->f_u.fu_llist, &delayed_fput_list))
 			schedule_delayed_work(&delayed_fput_work, 1);
 	}
-}
-
-void fput(struct file *file)
-{
-	fput_many(file, 1);
 }
 
 /*
@@ -391,11 +387,10 @@ void __init files_init(void)
 void __init files_maxfiles_init(void)
 {
 	unsigned long n;
-	unsigned long nr_pages = totalram_pages();
-	unsigned long memreserve = (nr_pages - nr_free_pages()) * 3/2;
+	unsigned long memreserve = (totalram_pages - nr_free_pages()) * 3/2;
 
-	memreserve = min(memreserve, nr_pages - 1);
-	n = ((nr_pages - memreserve) * (PAGE_SIZE / 1024)) / 10;
+	memreserve = min(memreserve, totalram_pages - 1);
+	n = ((totalram_pages - memreserve) * (PAGE_SIZE / 1024)) / 10;
 
 	files_stat.max_files = max_t(unsigned long, n, NR_FILE);
 }

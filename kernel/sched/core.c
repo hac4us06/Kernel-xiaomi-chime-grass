@@ -5,6 +5,8 @@
  *
  *  Copyright (C) 1991-2002  Linus Torvalds
  */
+#include <linux/lrng.h>
+
 #include "sched.h"
 
 #include <linux/nospec.h>
@@ -762,7 +764,7 @@ static struct uclamp_se uclamp_default[UCLAMP_CNT];
 
 static inline unsigned int uclamp_bucket_id(unsigned int clamp_value)
 {
-	return min_t(unsigned int, clamp_value / UCLAMP_BUCKET_DELTA, UCLAMP_BUCKETS - 1);
+	return clamp_value / UCLAMP_BUCKET_DELTA;
 }
 
 static inline unsigned int uclamp_bucket_base_value(unsigned int clamp_value)
@@ -1527,11 +1529,16 @@ static struct rq *move_queued_task(struct rq *rq, struct rq_flags *rf,
 
 	WRITE_ONCE(p->on_rq, TASK_ON_RQ_MIGRATING);
 	dequeue_task(rq, p, DEQUEUE_NOCLOCK);
+#ifdef CONFIG_SCHED_WALT
 	double_lock_balance(rq, cpu_rq(new_cpu));
 	if (!(rq->clock_update_flags & RQCF_UPDATED))
 		update_rq_clock(rq);
 	set_task_cpu(p, new_cpu);
 	double_rq_unlock(cpu_rq(new_cpu), rq);
+#else
+	set_task_cpu(p, new_cpu);
+	rq_unlock(rq, rf);
+#endif
 
 	rq = cpu_rq(new_cpu);
 
@@ -1651,7 +1658,7 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 	if (queued)
 		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
 	if (running)
-		set_curr_task(rq, p);
+		set_next_task(rq, p);
 }
 
 /*
@@ -2258,6 +2265,8 @@ ttwu_stat(struct task_struct *p, int cpu, int wake_flags)
 {
 	struct rq *rq;
 
+	add_sched_randomness(p, cpu);
+
 	if (!schedstat_enabled())
 		return;
 
@@ -2480,9 +2489,6 @@ out:
 
 bool cpus_share_cache(int this_cpu, int that_cpu)
 {
-	if (this_cpu == that_cpu)
-		return true;
-
 	return per_cpu(sd_llc_id, this_cpu) == per_cpu(sd_llc_id, that_cpu);
 }
 #endif /* CONFIG_SMP */
@@ -3519,12 +3525,8 @@ static __always_inline struct rq *
 context_switch(struct rq *rq, struct task_struct *prev,
 	       struct task_struct *next, struct rq_flags *rf)
 {
-	struct mm_struct *mm, *oldmm;
-
 	prepare_task_switch(rq, prev, next);
 
-	mm = next->mm;
-	oldmm = prev->active_mm;
 	/*
 	 * For paravirt, this is coupled with an exit in switch_to to
 	 * combine the page table reload and the switch backend into
@@ -3533,22 +3535,38 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	arch_start_context_switch(prev);
 
 	/*
-	 * If mm is non-NULL, we pass through switch_mm(). If mm is
-	 * NULL, we will pass through mmdrop() in finish_task_switch().
-	 * Both of these contain the full memory barrier required by
-	 * membarrier after storing to rq->curr, before returning to
-	 * user-space.
+	 * kernel -> kernel   lazy + transfer active
+	 *   user -> kernel   lazy + mmgrab() active
+	 *
+	 * kernel ->   user   switch + mmdrop() active
+	 *   user ->   user   switch
 	 */
-	if (!mm) {
-		next->active_mm = oldmm;
-		mmgrab(oldmm);
-		enter_lazy_tlb(oldmm, next);
-	} else
-		switch_mm_irqs_off(oldmm, mm, next);
+	if (!next->mm) {                                // to kernel
+		enter_lazy_tlb(prev->active_mm, next);
 
-	if (!prev->mm) {
-		prev->active_mm = NULL;
-		rq->prev_mm = oldmm;
+		next->active_mm = prev->active_mm;
+		if (prev->mm)                           // from user
+			mmgrab(prev->active_mm);
+		else
+			prev->active_mm = NULL;
+	} else {                                        // to user
+		/*
+		 * sys_membarrier() requires an smp_mb() between setting
+		 * rq->curr and returning to userspace.
+		 *
+		 * The below provides this either through switch_mm(), or in
+		 * case 'prev->active_mm == next->mm' through
+		 * finish_task_switch()'s mmdrop().
+		 */
+
+		switch_mm_irqs_off(prev->active_mm, next->mm, next);
+		lru_gen_use_mm(next->mm);
+
+		if (!prev->mm) {                        // from kernel
+			/* will mmdrop() in finish_task_switch(). */
+			rq->prev_mm = prev->active_mm;
+			prev->active_mm = NULL;
+		}
 	}
 
 	rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
@@ -4131,7 +4149,7 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 
 		p = fair_sched_class.pick_next_task(rq, prev, rf);
 		if (unlikely(p == RETRY_TASK))
-			goto again;
+			goto restart;
 
 		/* Assumes fair_sched_class->next == idle_sched_class */
 		if (unlikely(!p))
@@ -4140,14 +4158,28 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 		return p;
 	}
 
-again:
+restart:
+#ifdef CONFIG_SMP
+	/*
+	 * We must do the balancing pass before put_next_task(), such
+	 * that when we release the rq->lock the task is in the same
+	 * state as before we took rq->lock.
+	 *
+	 * We can terminate the balance pass as soon as we know there is
+	 * a runnable task of @class priority or higher.
+	 */
+	for_class_range(class, prev->sched_class, &idle_sched_class) {
+		if (class->balance(rq, prev, rf))
+			break;
+	}
+#endif
+
+	put_prev_task(rq, prev);
+
 	for_each_class(class) {
-		p = class->pick_next_task(rq, prev, rf);
-		if (p) {
-			if (unlikely(p == RETRY_TASK))
-				goto again;
+		p = class->pick_next_task(rq, NULL, NULL);
+		if (p)
 			return p;
-		}
 	}
 
 	/* The idle class should always have a runnable task: */
@@ -4668,7 +4700,7 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	if (queued)
 		enqueue_task(rq, p, queue_flag);
 	if (running)
-		set_curr_task(rq, p);
+		set_next_task(rq, p);
 
 	check_class_changed(rq, p, prev_class, oldprio);
 out_unlock:
@@ -4735,7 +4767,7 @@ void set_user_nice(struct task_struct *p, long nice)
 			resched_curr(rq);
 	}
 	if (running)
-		set_curr_task(rq, p);
+		set_next_task(rq, p);
 out_unlock:
 	task_rq_unlock(rq, p, &rf);
 }
@@ -4826,6 +4858,7 @@ int idle_cpu(int cpu)
 
 	return 1;
 }
+EXPORT_SYMBOL_GPL(idle_cpu);
 
 /**
  * available_idle_cpu - is a given CPU idle for enqueuing work.
@@ -5178,7 +5211,7 @@ change:
 		enqueue_task(rq, p, queue_flags);
 	}
 	if (running)
-		set_curr_task(rq, p);
+		set_next_task(rq, p);
 
 	check_class_changed(rq, p, prev_class, oldprio);
 
@@ -5691,22 +5724,71 @@ EXPORT_SYMBOL_GPL(sched_setaffinity);
 
 char sched_lib_name[LIB_PATH_LENGTH];
 unsigned int sched_lib_mask_force;
+struct libname_node {
+	char *name;
+	struct list_head list;
+};
+static LIST_HEAD(__sched_lib_name_list);
+static DEFINE_SPINLOCK(__sched_lib_name_lock);
+
+/*
+ * A sysctl callback for handling 'sched_lib_name' operation. Except processing
+ * the data with the usual function 'proc_dostring()', additionally tokenize the
+ * input text with the dilimiter ',' and store in a linked list
+ * '__sched_lib_name_list'.
+ */
+int sysctl_sched_lib_name_handler(struct ctl_table *table, int write,
+				  void __user *buffer, size_t *lenp,
+				  loff_t *ppos)
+{
+	int ret;
+	char *curr, *next;
+	char dup_sched_lib_name[LIB_PATH_LENGTH];
+	struct libname_node *pos, *tmp;
+
+	ret = proc_dostring(table, write, buffer, lenp, ppos);
+	if (write && !ret) {
+		spin_lock(&__sched_lib_name_lock);
+		/* Free the old list. */
+		if (!list_empty(&__sched_lib_name_list)) {
+			list_for_each_entry_safe (
+				pos, tmp, &__sched_lib_name_list, list) {
+				list_del(&pos->list);
+				kfree(pos->name);
+				kfree(pos);
+			}
+		}
+
+		if (strnlen(sched_lib_name, LIB_PATH_LENGTH) == 0) {
+			spin_unlock(&__sched_lib_name_lock);
+			return 0;
+		}
+
+		/* Split sched_lib_name by ',' and store in a linked list. */
+		strlcpy(dup_sched_lib_name, sched_lib_name, LIB_PATH_LENGTH);
+		next = dup_sched_lib_name;
+		while ((curr = strsep(&next, ",")) != NULL) {
+			pos = kmalloc(sizeof(struct libname_node), GFP_ATOMIC);
+			pos->name = kstrdup(curr, GFP_ATOMIC);
+			list_add_tail(&pos->list, &__sched_lib_name_list);
+		}
+		spin_unlock(&__sched_lib_name_lock);
+	}
+
+	return ret;
+}
+
 bool is_sched_lib_based_app(pid_t pid)
 {
 	const char *name = NULL;
-	char *libname, *lib_list;
 	struct vm_area_struct *vma;
 	char path_buf[LIB_PATH_LENGTH];
-	char *tmp_lib_name;
 	bool found = false;
 	struct task_struct *p;
 	struct mm_struct *mm;
+	struct libname_node *pos;
 
 	if (strnlen(sched_lib_name, LIB_PATH_LENGTH) == 0)
-		return false;
-
-	tmp_lib_name = kmalloc(LIB_PATH_LENGTH, GFP_KERNEL);
-	if (!tmp_lib_name)
 		return false;
 
 	rcu_read_lock();
@@ -5714,13 +5796,23 @@ bool is_sched_lib_based_app(pid_t pid)
 	p = find_process_by_pid(pid);
 	if (!p) {
 		rcu_read_unlock();
-		kfree(tmp_lib_name);
 		return false;
 	}
 
 	/* Prevent p going away */
 	get_task_struct(p);
 	rcu_read_unlock();
+
+	spin_lock(&__sched_lib_name_lock);
+	/* Check if the task name equals any of the sched_lib_name list. */
+	list_for_each_entry (pos, &__sched_lib_name_list, list) {
+		if (!strncmp(p->comm, pos->name, LIB_PATH_LENGTH)) {
+			found = true;
+			spin_unlock(&__sched_lib_name_lock);
+			goto put_task_struct;
+		}
+	}
+	spin_unlock(&__sched_lib_name_lock);
 
 	mm = get_task_mm(p);
 	if (!mm)
@@ -5734,16 +5826,18 @@ bool is_sched_lib_based_app(pid_t pid)
 			if (IS_ERR(name))
 				goto release_sem;
 
-			strlcpy(tmp_lib_name, sched_lib_name, LIB_PATH_LENGTH);
-			lib_list = tmp_lib_name;
-			while ((libname = strsep(&lib_list, ","))) {
-				libname = skip_spaces(libname);
-				if (strnstr(name, libname,
-					strnlen(name, LIB_PATH_LENGTH))) {
+			/* Check if the file name includes any of the
+			 * sched_lib_name list. */
+			spin_lock(&__sched_lib_name_lock);
+			list_for_each_entry (pos, &__sched_lib_name_list,
+					     list) {
+				if (strnstr(name, pos->name,
+					    strnlen(name, LIB_PATH_LENGTH))) {
 					found = true;
-					goto release_sem;
+					break;
 				}
 			}
+			spin_unlock(&__sched_lib_name_lock);
 		}
 	}
 
@@ -5752,7 +5846,6 @@ release_sem:
 	mmput(mm);
 put_task_struct:
 	put_task_struct(p);
-	kfree(tmp_lib_name);
 	return found;
 }
 
@@ -5785,8 +5878,15 @@ SYSCALL_DEFINE3(sched_setaffinity, pid_t, pid, unsigned int, len,
 		return -ENOMEM;
 
 	retval = get_user_cpu_mask(user_mask_ptr, len, new_mask);
-	if (retval == 0)
-		retval = sched_setaffinity(pid, new_mask);
+	if (retval == 0) {
+		if (sched_lib_mask_force != 0 && is_sched_lib_based_app(pid)) {
+				cpumask_t forced_mask = { {sched_lib_mask_force} };
+				cpumask_copy(new_mask, &forced_mask);
+				retval = sched_setaffinity(pid, new_mask);
+			} else {
+				retval = sched_setaffinity(pid, new_mask);
+			}
+	}
 	free_cpumask_var(new_mask);
 	return retval;
 }
@@ -5881,8 +5981,12 @@ static void do_sched_yield(void)
 	schedstat_inc(rq->yld_count);
 	current->sched_class->yield_task(rq);
 
+	/*
+	 * Since we are going to call schedule() anyway, there's
+	 * no need to preempt or enable interrupts:
+	 */
 	preempt_disable();
-	rq_unlock_irq(rq, &rf);
+	rq_unlock(rq, &rf);
 	sched_preempt_enable_no_resched();
 
 	schedule();
@@ -6295,6 +6399,7 @@ void show_state_filter(unsigned long state_filter)
 	if (!state_filter)
 		debug_show_all_locks();
 }
+EXPORT_SYMBOL_GPL(show_state_filter);
 
 /**
  * init_idle - set up an idle thread for a given CPU
@@ -6453,7 +6558,7 @@ void sched_setnuma(struct task_struct *p, int nid)
 	if (queued)
 		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
 	if (running)
-		set_curr_task(rq, p);
+		set_next_task(rq, p);
 	task_rq_unlock(rq, p, &rf);
 }
 #endif /* CONFIG_NUMA_BALANCING */
@@ -6494,21 +6599,22 @@ static void calc_load_migrate(struct rq *rq)
 		atomic_long_add(delta, &calc_load_tasks);
 }
 
-static void put_prev_task_fake(struct rq *rq, struct task_struct *prev)
+static struct task_struct *__pick_migrate_task(struct rq *rq)
 {
+	const struct sched_class *class;
+	struct task_struct *next;
+
+	for_each_class(class) {
+		next = class->pick_next_task(rq, NULL, NULL);
+		if (next) {
+			next->sched_class->put_prev_task(rq, next);
+			return next;
+		}
+	}
+
+	/* The idle class should always have a runnable task */
+	BUG();
 }
-
-static const struct sched_class fake_sched_class = {
-	.put_prev_task = put_prev_task_fake,
-};
-
-static struct task_struct fake_task = {
-	/*
-	 * Avoid pull_{rt,dl}_task()
-	 */
-	.prio = MAX_PRIO + 1,
-	.sched_class = &fake_sched_class,
-};
 
 /*
  * Remove a task from the runqueue and pretend that it's migrating. This
@@ -6588,12 +6694,7 @@ static void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf,
 		if (rq->nr_running == 1)
 			break;
 
-		/*
-		 * pick_next_task() assumes pinned rq->lock:
-		 */
-		next = pick_next_task(rq, &fake_task, rf);
-		BUG_ON(!next);
-		put_prev_task(rq, next);
+		next = __pick_migrate_task(rq);
 
 		if (!migrate_pinned_tasks && next->flags & PF_KTHREAD &&
 			!cpumask_intersects(&avail_cpus, &next->cpus_allowed)) {
@@ -6824,6 +6925,7 @@ out:
 			    start_time, 1);
 	return ret_code;
 }
+EXPORT_SYMBOL_GPL(sched_isolate_cpu);
 
 /*
  * Note: The client calling sched_isolate_cpu() is repsonsible for ONLY
@@ -6868,6 +6970,7 @@ out:
 			    start_time, 0);
 	return ret_code;
 }
+EXPORT_SYMBOL_GPL(sched_unisolate_cpu_unlocked);
 
 int sched_unisolate_cpu(int cpu)
 {
@@ -6878,6 +6981,7 @@ int sched_unisolate_cpu(int cpu)
 	cpu_maps_update_done();
 	return ret_code;
 }
+EXPORT_SYMBOL_GPL(sched_unisolate_cpu);
 
 #endif /* CONFIG_HOTPLUG_CPU */
 
@@ -7153,6 +7257,8 @@ static struct kmem_cache *task_group_cache __read_mostly;
 
 DECLARE_PER_CPU(cpumask_var_t, load_balance_mask);
 DECLARE_PER_CPU(cpumask_var_t, select_idle_mask);
+DECLARE_PER_CPU(unsigned long *, prioritized_task_mask);
+DECLARE_PER_CPU(int, prioritized_task_nr);
 
 void __init sched_init(void)
 {
@@ -7225,6 +7331,9 @@ void __init sched_init(void)
 		rq = cpu_rq(i);
 		raw_spin_lock_init(&rq->lock);
 		rq->nr_running = 0;
+		per_cpu(prioritized_task_mask, i) =
+			bitmap_zalloc(TASK_BITS, GFP_KERNEL);
+		per_cpu(prioritized_task_nr, i) = 0;
 		rq->calc_load_active = 0;
 		rq->calc_load_update = jiffies + LOAD_FREQ;
 		init_cfs_rq(&rq->cfs);
@@ -7278,7 +7387,9 @@ void __init sched_init(void)
 		rq->idle_stamp = 0;
 		rq->avg_idle = 2*sysctl_sched_migration_cost;
 		rq->max_idle_balance_cost = sysctl_sched_migration_cost;
+#ifdef CONFIG_SCHED_WALT
 		rq->push_task = NULL;
+#endif
 		walt_sched_init_rq(rq);
 
 		INIT_LIST_HEAD(&rq->cfs_tasks);
@@ -7473,7 +7584,7 @@ struct task_struct *curr_task(int cpu)
 
 #ifdef CONFIG_IA64
 /**
- * set_curr_task - set the current task for a given CPU.
+ * ia64_set_curr_task - set the current task for a given CPU.
  * @cpu: the processor in question.
  * @p: the task pointer to set.
  *
@@ -7639,7 +7750,7 @@ void sched_move_task(struct task_struct *tsk)
 	if (queued)
 		enqueue_task(rq, tsk, queue_flags);
 	if (running)
-		set_curr_task(rq, tsk);
+		set_next_task(rq, tsk);
 
 	task_rq_unlock(rq, tsk, &rf);
 }
@@ -8591,6 +8702,7 @@ int set_task_boost(int boost, u64 period)
 	}
 	return 0;
 }
+EXPORT_SYMBOL_GPL(set_task_boost);
 
 #ifdef CONFIG_SCHED_WALT
 /*
