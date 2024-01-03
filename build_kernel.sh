@@ -2,7 +2,7 @@
 set -e
 
 [ ! -e "scripts/packaging/pack.sh" ] && git submodule init && git submodule update
-[ ! -e "toolchain" ] && echo "Make toolchain avaliable at $(pwd)/toolchain" && exit
+[ ! -e "toolchain" ] && echo "Make toolchain avaliable at $(pwd)/toolchain"
 
 # Patch for 4.14
 sed -i 's/#ifdef CONFIG_KPROBES/#if 0/g' KernelSU/kernel/ksu.c
